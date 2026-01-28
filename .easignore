@@ -1,0 +1,10 @@
+.Trash
+.DS_Store
+.git
+node_modules
+*.log
+.env.local
+.cache
+.next
+dist
+build
