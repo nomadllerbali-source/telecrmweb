@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Lead } from '@/types';
 import { ArrowLeft, MapPin, Users, Calendar, Briefcase } from 'lucide-react-native';
+import { Colors, Layout } from '@/constants/Colors';
 
 export default function OperationsScreen() {
   const { user } = useAuth();
@@ -37,7 +38,7 @@ export default function OperationsScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#8b5cf6" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -47,7 +48,7 @@ export default function OperationsScreen() {
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <View style={styles.iconContainer}>
-            <ArrowLeft size={24} color="#1a1a1a" />
+            <ArrowLeft size={24} color={Colors.text.primary} />
           </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Allocated to Operations</Text>
@@ -72,22 +73,22 @@ export default function OperationsScreen() {
               <View style={styles.leadHeader}>
                 <Text style={styles.leadName}>{lead.client_name}</Text>
                 <View style={styles.operationsBadge}>
-                  <Briefcase size={14} color="#8b5cf6" />
+                  <Briefcase size={14} color={Colors.primary} />
                   <Text style={styles.operationsBadgeText}>OPERATIONS</Text>
                 </View>
               </View>
 
               <View style={styles.leadDetails}>
                 <View style={styles.detailRow}>
-                  <MapPin size={16} color="#666" />
+                  <MapPin size={16} color={Colors.text.secondary} />
                   <Text style={styles.detailText}>{lead.place}</Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Users size={16} color="#666" />
+                  <Users size={16} color={Colors.text.secondary} />
                   <Text style={styles.detailText}>{lead.no_of_pax} Pax</Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Calendar size={16} color="#666" />
+                  <Calendar size={16} color={Colors.text.secondary} />
                   <Text style={styles.detailText}>
                     {lead.travel_date || lead.travel_month || 'Date TBD'}
                   </Text>
@@ -104,26 +105,29 @@ export default function OperationsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+    ...Layout.shadows.sm,
   },
   backButton: {
     padding: 4,
+    borderRadius: Layout.radius.full,
   },
   iconContainer: {
     justifyContent: 'center',
@@ -131,14 +135,14 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   emptyContainer: {
     padding: 40,
@@ -146,18 +150,14 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#666',
+    color: Colors.text.tertiary,
   },
   leadCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Layout.shadows.sm,
   },
   leadHeader: {
     flexDirection: 'row',
@@ -167,23 +167,23 @@ const styles = StyleSheet.create({
   },
   leadName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
     flex: 1,
   },
   operationsBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#ede9fe',
+    backgroundColor: Colors.surfaceHighlight,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: Layout.radius.sm,
   },
   operationsBadgeText: {
-    color: '#8b5cf6',
+    color: Colors.primary,
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   leadDetails: {
     gap: 8,
@@ -195,6 +195,6 @@ const styles = StyleSheet.create({
   },
   detailText: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
   },
 });

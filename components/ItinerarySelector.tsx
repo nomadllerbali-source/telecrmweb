@@ -3,12 +3,14 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ChevronDown, Send } from 'lucide-react-native';
 import * as Linking from 'expo-linking';
+import { Colors, Layout } from '@/constants/Colors';
 
 interface Itinerary {
   id: string;
   name: string;
   days: number;
   cost_usd: number;
+  cost_inr?: number;
   no_of_pax: number;
 }
 
@@ -33,11 +35,25 @@ export default function ItinerarySelector({
 }: ItinerarySelectorProps) {
   const [availableItineraries, setAvailableItineraries] = useState<Itinerary[]>([]);
   const [showPicker, setShowPicker] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState(83);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    fetchExchangeRate();
     fetchItineraries();
   }, [destination]);
+
+  const fetchExchangeRate = async () => {
+    try {
+      const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+      const data = await response.json();
+      if (data.rates && data.rates.INR) {
+        setExchangeRate(data.rates.INR);
+      }
+    } catch (error) {
+      console.error('Error fetching exchange rate:', error);
+    }
+  };
 
   const fetchItineraries = async () => {
     if (!destination.trim()) {
@@ -50,7 +66,7 @@ export default function ItinerarySelector({
     try {
       const { data, error } = await supabase
         .from('itineraries')
-        .select('id, name, days, cost_usd, no_of_pax')
+        .select('id, name, days, cost_usd, cost_inr, no_of_pax')
         .ilike('name', `%${destination}%`);
 
       if (error) throw error;
@@ -72,8 +88,7 @@ export default function ItinerarySelector({
   const handleSendItinerary = async (itinerary: Itinerary) => {
     if (!contactNumber || !clientName) return;
 
-    const exchangeRate = 83;
-    const inrAmount = Math.round(itinerary.cost_usd * exchangeRate);
+    const costINR = itinerary.cost_inr || Math.round(itinerary.cost_usd * (exchangeRate + 2));
 
     const message = `Hi ${clientName},
 
@@ -85,7 +100,7 @@ Pax: ${itinerary.no_of_pax} persons
 
 Cost:
 USD $${itinerary.cost_usd.toFixed(2)}
-INR ₹${inrAmount}
+INR ₹${costINR}
 
 Would love to help you plan this amazing journey!
 
@@ -114,19 +129,20 @@ Nomadller Solutions Team`;
       <Text style={styles.label}>Select Itinerary</Text>
       {loading ? (
         <View style={[styles.pickerButton, styles.loadingPicker]}>
-          <ActivityIndicator size="small" color="#8b5cf6" />
-          <Text style={styles.pickerButtonText}>Loading itineraries...</Text>
+          <ActivityIndicator size="small" color={Colors.primary} />
+          <Text style={styles.pickerButtonText}>Searching itineraries...</Text>
         </View>
       ) : availableItineraries.length > 0 ? (
         <>
           <TouchableOpacity
             style={styles.pickerButton}
             onPress={() => setShowPicker(!showPicker)}
+            activeOpacity={0.7}
           >
             <Text style={[styles.pickerButtonText, !selectedItinerary && styles.placeholderText]}>
               {selectedItinerary ? selectedItinerary.name : 'Select an itinerary'}
             </Text>
-            <ChevronDown size={20} color="#666" />
+            <ChevronDown size={20} color={Colors.text.tertiary} />
           </TouchableOpacity>
           {showPicker && (
             <View style={styles.pickerOptions}>
@@ -153,14 +169,17 @@ Nomadller Solutions Team`;
             <TouchableOpacity
               style={styles.sendButton}
               onPress={() => onSendItinerary ? onSendItinerary(selectedItinerary) : handleSendItinerary(selectedItinerary)}
+              activeOpacity={0.8}
             >
-              <Send size={18} color="#fff" />
-              <Text style={styles.sendButtonText}>Send Itinerary via WhatsApp</Text>
+              <Send size={18} color={Colors.background} />
+              <Text style={styles.sendButtonText}>Send via WhatsApp</Text>
             </TouchableOpacity>
           )}
         </>
       ) : (
-        <Text style={styles.noItinerariesText}>No itineraries found for this destination</Text>
+        <View style={styles.noItinerariesBox}>
+          <Text style={styles.noItinerariesText}>No itineraries found for this destination</Text>
+        </View>
       )}
     </View>
   );
@@ -171,87 +190,95 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.text.secondary,
     marginBottom: 8,
+    marginLeft: 4,
   },
   pickerButton: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    backgroundColor: Colors.background,
   },
   pickerButtonText: {
-    fontSize: 16,
-    color: '#333',
+    fontSize: 15,
+    color: Colors.text.primary,
+    fontWeight: '600',
+    flex: 1,
   },
   placeholderText: {
-    color: '#999',
+    color: Colors.text.tertiary,
   },
   loadingPicker: {
     justifyContent: 'center',
+    gap: 10,
   },
   pickerOptions: {
     marginTop: 8,
-    backgroundColor: '#fff',
-    borderRadius: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
     borderWidth: 1,
-    borderColor: '#ddd',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderColor: Colors.border,
+    ...Layout.shadows.md,
+    overflow: 'hidden',
   },
   pickerOption: {
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: Colors.divider,
   },
   pickerOptionText: {
-    fontSize: 16,
-    color: '#333',
+    fontSize: 15,
+    color: Colors.text.primary,
+    fontWeight: '600',
   },
   itineraryOptionContent: {
     flex: 1,
   },
   itinerarySubtext: {
     fontSize: 12,
-    color: '#999',
+    color: Colors.text.tertiary,
     marginTop: 4,
+    fontWeight: '500',
+  },
+  noItinerariesBox: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
   },
   noItinerariesText: {
     fontSize: 14,
-    color: '#999',
-    paddingVertical: 12,
+    color: Colors.text.tertiary,
     fontStyle: 'italic',
+    textAlign: 'center',
   },
   sendButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#25D366',
-    paddingVertical: 12,
+    backgroundColor: Colors.secondary,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: Layout.radius.xl,
     marginTop: 12,
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    gap: 10,
+    ...Layout.shadows.md,
   },
   sendButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+    color: Colors.background,
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

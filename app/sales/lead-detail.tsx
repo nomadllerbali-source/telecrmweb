@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Lead } from '@/types';
 import { ArrowLeft, MapPin, Users, Calendar, Briefcase, DollarSign, FileText } from 'lucide-react-native';
+import { Colors, Layout } from '@/constants/Colors';
 
 interface FollowUp {
   id: string;
@@ -60,7 +61,7 @@ export default function LeadDetailScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#8b5cf6" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -71,7 +72,7 @@ export default function LeadDetailScreen() {
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <View style={styles.iconContainer}>
-              <ArrowLeft size={24} color="#1a1a1a" />
+              <ArrowLeft size={24} color={Colors.text.primary} />
             </View>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Lead Details</Text>
@@ -89,7 +90,7 @@ export default function LeadDetailScreen() {
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <View style={styles.iconContainer}>
-            <ArrowLeft size={24} color="#1a1a1a" />
+            <ArrowLeft size={24} color={Colors.text.primary} />
           </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Lead Details</Text>
@@ -104,17 +105,17 @@ export default function LeadDetailScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Basic Information</Text>
             <View style={styles.detailRow}>
-              <MapPin size={16} color="#8b5cf6" />
+              <MapPin size={16} color={Colors.primary} />
               <Text style={styles.detailLabel}>Location:</Text>
               <Text style={styles.detailValue}>{lead.place}</Text>
             </View>
             <View style={styles.detailRow}>
-              <Users size={16} color="#8b5cf6" />
+              <Users size={16} color={Colors.primary} />
               <Text style={styles.detailLabel}>Travelers:</Text>
               <Text style={styles.detailValue}>{lead.no_of_pax} Pax</Text>
             </View>
             <View style={styles.detailRow}>
-              <Calendar size={16} color="#8b5cf6" />
+              <Calendar size={16} color={Colors.primary} />
               <Text style={styles.detailLabel}>Travel Date:</Text>
               <Text style={styles.detailValue}>
                 {lead.travel_date || lead.travel_month || 'Date TBD'}
@@ -122,14 +123,14 @@ export default function LeadDetailScreen() {
             </View>
             {lead.expected_budget && (
               <View style={styles.detailRow}>
-                <DollarSign size={16} color="#8b5cf6" />
+                <DollarSign size={16} color={Colors.primary} />
                 <Text style={styles.detailLabel}>Budget:</Text>
                 <Text style={styles.detailValue}>₹{lead.expected_budget}</Text>
               </View>
             )}
             {lead.remark && (
               <View style={styles.detailRow}>
-                <FileText size={16} color="#8b5cf6" />
+                <FileText size={16} color={Colors.primary} />
                 <Text style={styles.detailLabel}>Remark:</Text>
               </View>
             )}
@@ -143,7 +144,7 @@ export default function LeadDetailScreen() {
               <Text style={styles.sectionTitle}>Financial Information</Text>
               {latest.itinerary_id && (
                 <View style={styles.detailRow}>
-                  <FileText size={16} color="#8b5cf6" />
+                  <FileText size={16} color={Colors.primary} />
                   <Text style={styles.detailLabel}>Itinerary Code:</Text>
                   <Text style={styles.detailValue}>{latest.itinerary_id}</Text>
                 </View>
@@ -208,26 +209,29 @@ export default function LeadDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+    ...Layout.shadows.sm,
   },
   backButton: {
     padding: 4,
+    borderRadius: Layout.radius.full,
   },
   iconContainer: {
     justifyContent: 'center',
@@ -235,14 +239,14 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   emptyContainer: {
     padding: 40,
@@ -250,40 +254,36 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Layout.shadows.sm,
   },
   clientName: {
     fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
   contactNumber: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
     marginBottom: 16,
   },
   section: {
     marginTop: 16,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e5e5e5',
+    borderTopColor: Colors.border,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#8b5cf6',
+    color: Colors.primary,
     marginBottom: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -297,29 +297,29 @@ const styles = StyleSheet.create({
   detailLabel: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#666',
+    color: Colors.text.secondary,
     minWidth: 110,
   },
   detailValue: {
     fontSize: 13,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     fontWeight: '500',
     flex: 1,
   },
   remarkText: {
     fontSize: 13,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     marginLeft: 24,
     marginBottom: 12,
     lineHeight: 18,
   },
   amountBox: {
-    backgroundColor: '#f9f5ff',
-    borderRadius: 8,
+    backgroundColor: Colors.surfaceHighlight,
+    borderRadius: Layout.radius.md,
     padding: 12,
     marginBottom: 8,
     borderLeftWidth: 4,
-    borderLeftColor: '#8b5cf6',
+    borderLeftColor: Colors.primary,
   },
   amountRow: {
     flexDirection: 'row',
@@ -329,22 +329,22 @@ const styles = StyleSheet.create({
   amountLabel: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#666',
+    color: Colors.text.secondary,
   },
   amountValue: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   dueAmount: {
-    color: '#d97706',
+    color: Colors.status.warning,
   },
   followUpItem: {
     paddingVertical: 12,
   },
   followUpItemBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: Colors.border,
   },
   followUpHeader: {
     flexDirection: 'row',
@@ -355,22 +355,22 @@ const styles = StyleSheet.create({
   followUpType: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#8b5cf6',
+    color: Colors.primary,
     textTransform: 'uppercase',
   },
   followUpDate: {
     fontSize: 12,
-    color: '#999',
+    color: Colors.text.tertiary,
   },
   followUpNote: {
     fontSize: 13,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     marginBottom: 6,
     lineHeight: 18,
   },
   followUpNext: {
     fontSize: 12,
-    color: '#666',
+    color: Colors.text.secondary,
     fontStyle: 'italic',
   },
 });

@@ -1,12 +1,13 @@
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert, Modal, Linking } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert, Modal, Linking, KeyboardAvoidingView, Platform } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { User } from '@/types';
-import { ArrowLeft, Check, Calendar, ChevronDown, Phone, MessageCircle } from 'lucide-react-native';
+import { ArrowLeft, Check, Calendar, ChevronDown, Phone, MessageCircle, X, MapPin, Users, Wallet, FileText, Info } from 'lucide-react-native';
 import DateTimePickerComponent from '@/components/DateTimePicker';
 import { sendLeadAssignmentNotification } from '@/services/notifications';
+import { Colors, Layout } from '@/constants/Colors';
 
 export default function AssignLeadScreen() {
   const { user } = useAuth();
@@ -17,6 +18,8 @@ export default function AssignLeadScreen() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showCountryCodePicker, setShowCountryCodePicker] = useState(false);
   const [showSalesPersonPicker, setShowSalesPersonPicker] = useState(false);
+  const [showSourcePicker, setShowSourcePicker] = useState(false);
+  const [isAutoAssign, setIsAutoAssign] = useState(false);
 
   const [formData, setFormData] = useState({
     leadType: 'normal' as 'normal' | 'urgent' | 'hot',
@@ -31,6 +34,7 @@ export default function AssignLeadScreen() {
     remark: '',
     assignedTo: '',
     dateType: 'exact' as 'exact' | 'month',
+    leadSource: 'Other',
   });
 
   const [selectedTravelDate, setSelectedTravelDate] = useState<Date | null>(null);
@@ -49,6 +53,10 @@ export default function AssignLeadScreen() {
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const leadSources = [
+    'Instagram', 'Facebook', 'Google Ads', 'Website', 'WhatsApp', 'Phone', 'Other'
   ];
 
   const currentYear = new Date().getFullYear();
@@ -78,8 +86,10 @@ export default function AssignLeadScreen() {
   };
 
   const handleAssign = async () => {
-    if (!formData.clientName.trim() || !formData.contactNumber.trim() || !formData.noOfPax ||
-        !formData.place.trim() || !formData.expectedBudget || !formData.assignedTo) {
+    const isFieldsValid = formData.clientName.trim() && formData.contactNumber.trim() &&
+      formData.noOfPax && formData.place.trim() && formData.expectedBudget;
+
+    if (!isFieldsValid || (!formData.assignedTo && !isAutoAssign)) {
       setError('Please fill all required fields');
       return;
     }
@@ -98,6 +108,29 @@ export default function AssignLeadScreen() {
     setError('');
 
     try {
+      let targetSalesPersonId = formData.assignedTo;
+
+      if (isAutoAssign) {
+        const { data: salesPersonsOrdered, error: spError } = await supabase
+          .from('users')
+          .select('id, full_name')
+          .eq('role', 'sales')
+          .eq('status', 'active')
+          .order('last_assigned_at', { ascending: true, nullsFirst: true })
+          .limit(1);
+
+        if (spError || !salesPersonsOrdered || salesPersonsOrdered.length === 0) {
+          throw new Error('No active sales persons found for auto-assignment');
+        }
+
+        targetSalesPersonId = salesPersonsOrdered[0].id;
+
+        await supabase
+          .from('users')
+          .update({ last_assigned_at: new Date().toISOString() })
+          .eq('id', targetSalesPersonId);
+      }
+
       const { data: leadData, error: leadError } = await supabase.from('leads').insert([
         {
           lead_type: formData.leadType,
@@ -110,9 +143,10 @@ export default function AssignLeadScreen() {
           travel_month: formData.dateType === 'month' ? formData.travelMonth : null,
           expected_budget: parseFloat(formData.expectedBudget),
           remark: formData.remark || null,
-          assigned_to: formData.assignedTo,
+          assigned_to: targetSalesPersonId,
           assigned_by: user?.id,
           status: formData.leadType === 'hot' ? 'hot' : 'allocated',
+          lead_source: formData.leadSource,
         },
       ]).select();
 
@@ -120,11 +154,10 @@ export default function AssignLeadScreen() {
 
       if (leadData && leadData.length > 0) {
         const leadId = leadData[0].id;
-        const assignedSalesPerson = salesPersons.find(sp => sp.id === formData.assignedTo);
 
         await supabase.from('notifications').insert([
           {
-            user_id: formData.assignedTo,
+            user_id: targetSalesPersonId,
             type: 'lead_assigned',
             title: 'New Lead Assigned',
             message: `${formData.clientName} from ${formData.place} has been assigned to you. ${formData.noOfPax} Pax, Budget: ₹${formData.expectedBudget}`,
@@ -134,7 +167,7 @@ export default function AssignLeadScreen() {
         ]);
 
         await sendLeadAssignmentNotification(
-          formData.assignedTo,
+          targetSalesPersonId,
           formData.clientName,
           `${formData.countryCode}${formData.contactNumber}`,
           formData.leadType
@@ -179,587 +212,816 @@ export default function AssignLeadScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#1a1a1a" />
+          <View style={styles.iconButton}>
+            <ArrowLeft size={24} color={Colors.text.primary} />
+          </View>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Assign New Lead</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Assign Lead</Text>
+          <Text style={styles.headerSubtitle}>Create and route a new inquiry</Text>
+        </View>
+        <View style={{ width: 44 }} />
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
-        <Text style={styles.label}>Lead Type</Text>
-        <View style={styles.radioGroup}>
-          {(['normal', 'urgent', 'hot'] as const).map((type) => (
-            <TouchableOpacity
-              key={type}
-              style={[
-                styles.radioButton,
-                formData.leadType === type && styles.radioButtonActive,
-              ]}
-              onPress={() => setFormData({ ...formData, leadType: type })}
-            >
-              <Text
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.section}>
+          <View style={styles.sectionHead}>
+            <Info size={16} color={Colors.primary} />
+            <Text style={styles.sectionTitle}>Lead Priority</Text>
+          </View>
+
+          <View style={styles.radioGroup}>
+            {(['normal', 'urgent', 'hot'] as const).map((type) => (
+              <TouchableOpacity
+                key={type}
                 style={[
-                  styles.radioButtonText,
-                  formData.leadType === type && styles.radioButtonTextActive,
+                  styles.radioButton,
+                  formData.leadType === type && {
+                    backgroundColor: type === 'hot' ? Colors.status.error + '15' :
+                      type === 'urgent' ? Colors.status.warning + '15' :
+                        Colors.primary + '15',
+                    borderColor: type === 'hot' ? Colors.status.error :
+                      type === 'urgent' ? Colors.status.warning :
+                        Colors.primary,
+                  },
                 ]}
+                onPress={() => setFormData({ ...formData, leadType: type })}
               >
-                {type.charAt(0).toUpperCase() + type.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.radioButtonText,
+                    formData.leadType === type && {
+                      color: type === 'hot' ? Colors.status.error :
+                        type === 'urgent' ? Colors.status.warning :
+                          Colors.primary,
+                      fontWeight: '800',
+                    },
+                  ]}
+                >
+                  {type.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.formRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Lead Source</Text>
+                <TouchableOpacity
+                  style={styles.dropdownButton}
+                  onPress={() => setShowSourcePicker(true)}
+                >
+                  <Text style={styles.dropdownButtonTextSelected}>
+                    {formData.leadSource}
+                  </Text>
+                  <ChevronDown size={18} color={Colors.text.tertiary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <Text style={styles.label}>Client Name *</Text>
+            <View style={styles.inputContainer}>
+              <Users size={18} color={Colors.text.tertiary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                value={formData.clientName}
+                onChangeText={(text) => setFormData({ ...formData, clientName: text })}
+                placeholder="Enter client name"
+                placeholderTextColor={Colors.text.tertiary}
+                returnKeyType="next"
+                autoCapitalize="words"
+              />
+            </View>
+
+            <View style={styles.formRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Country</Text>
+                <TouchableOpacity
+                  style={styles.dropdownButton}
+                  onPress={() => setShowCountryCodePicker(true)}
+                >
+                  <Text style={styles.dropdownButtonTextSelected}>
+                    {getSelectedCountry()}
+                  </Text>
+                  <ChevronDown size={18} color={Colors.text.tertiary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <Text style={styles.label}>Contact Number *</Text>
+            <View style={styles.contactNumberRow}>
+              <View style={styles.contactInputWrapper}>
+                <Phone size={18} color={Colors.text.tertiary} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.contactInput}
+                  value={formData.contactNumber}
+                  onChangeText={(text) => setFormData({ ...formData, contactNumber: text })}
+                  placeholder="Enter number"
+                  placeholderTextColor={Colors.text.tertiary}
+                  keyboardType="phone-pad"
+                  returnKeyType="next"
+                />
+              </View>
+              <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
+                <Phone size={20} color={Colors.status.success} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp}>
+                <MessageCircle size={20} color="#25D366" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.formRow}>
+              <View style={{ flex: 0.4 }}>
+                <Text style={styles.label}>Pax *</Text>
+                <TextInput
+                  style={styles.inputSimple}
+                  value={formData.noOfPax}
+                  onChangeText={(text) => setFormData({ ...formData, noOfPax: text })}
+                  placeholder="2"
+                  placeholderTextColor={Colors.text.tertiary}
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={{ flex: 0.6 }}>
+                <Text style={styles.label}>Destination *</Text>
+                <View style={styles.inputContainer}>
+                  <MapPin size={18} color={Colors.text.tertiary} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    value={formData.place}
+                    onChangeText={(text) => setFormData({ ...formData, place: text })}
+                    placeholder="Where to?"
+                    placeholderTextColor={Colors.text.tertiary}
+                    autoCapitalize="words"
+                  />
+                </View>
+              </View>
+            </View>
+
+            <Text style={styles.label}>Travel Timing</Text>
+            <View style={styles.tabGroup}>
+              <TouchableOpacity
+                style={[
+                  styles.tabButton,
+                  formData.dateType === 'exact' && styles.tabButtonActive,
+                ]}
+                onPress={() => setFormData({ ...formData, dateType: 'exact' })}
+              >
+                <Text style={[styles.tabText, formData.dateType === 'exact' && styles.tabTextActive]}>
+                  Exact Date
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.tabButton,
+                  formData.dateType === 'month' && styles.tabButtonActive,
+                ]}
+                onPress={() => setFormData({ ...formData, dateType: 'month' })}
+              >
+                <Text style={[styles.tabText, formData.dateType === 'month' && styles.tabTextActive]}>
+                  Month Only
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {formData.dateType === 'exact' ? (
+              <DateTimePickerComponent
+                label="Travel Date *"
+                value={selectedTravelDate}
+                onChange={(date) => {
+                  setSelectedTravelDate(date);
+                  setFormData({ ...formData, travelDate: date.toISOString().split('T')[0] });
+                }}
+                mode="date"
+              />
+            ) : (
+              <>
+                <Text style={styles.label}>Travel Month *</Text>
+                <TouchableOpacity
+                  style={styles.dropdownButton}
+                  onPress={() => setShowMonthPicker(true)}
+                >
+                  <Calendar size={18} color={Colors.text.tertiary} style={{ marginRight: 12 }} />
+                  <Text style={formData.travelMonth ? styles.dropdownButtonTextSelected : styles.dropdownButtonTextPlaceholder}>
+                    {formData.travelMonth || 'Select month/year'}
+                  </Text>
+                  <ChevronDown size={18} color={Colors.text.tertiary} style={{ marginLeft: 'auto' }} />
+                </TouchableOpacity>
+              </>
+            )}
+
+            <Text style={styles.label}>Expected Budget *</Text>
+            <View style={styles.inputContainer}>
+              <Wallet size={18} color={Colors.text.tertiary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                value={formData.expectedBudget}
+                onChangeText={(text) => setFormData({ ...formData, expectedBudget: text })}
+                placeholder="₹ 0.00"
+                placeholderTextColor={Colors.text.tertiary}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            <Text style={styles.label}>Remark</Text>
+            <View style={styles.textAreaContainer}>
+              <FileText size={18} color={Colors.text.tertiary} style={[styles.inputIcon, { marginTop: 14 }]} />
+              <TextInput
+                style={styles.textArea}
+                value={formData.remark}
+                onChangeText={(text) => setFormData({ ...formData, remark: text })}
+                placeholder="Add specific requirements..."
+                placeholderTextColor={Colors.text.tertiary}
+                multiline
+                numberOfLines={4}
+              />
+            </View>
+          </View>
+
+          <View style={styles.assignmentBox}>
+            <View style={styles.assignmentHeader}>
+              <View style={styles.assignmentTitleRow}>
+                <Users size={18} color={Colors.primary} />
+                <Text style={styles.assignmentTitle}>Assignment</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.autoAssignToggle}
+                onPress={() => setIsAutoAssign(!isAutoAssign)}
+              >
+                <Text style={styles.autoAssignText}>Auto</Text>
+                <View style={[styles.toggleTrack, isAutoAssign && styles.toggleTrackActive]}>
+                  <View style={[styles.toggleThumb, isAutoAssign && styles.toggleThumbActive]} />
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {!isAutoAssign ? (
+              <TouchableOpacity
+                style={styles.dropdownButton}
+                onPress={() => setShowSalesPersonPicker(true)}
+              >
+                <Users size={18} color={Colors.text.tertiary} style={{ marginRight: 12 }} />
+                <Text style={formData.assignedTo ? styles.dropdownButtonTextSelected : styles.dropdownButtonTextPlaceholder}>
+                  {getSelectedSalesPerson()}
+                </Text>
+                <ChevronDown size={18} color={Colors.text.tertiary} style={{ marginLeft: 'auto' }} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.autoAssignInfo}>
+                <CheckCircleIcon size={16} color={Colors.status.success} />
+                <Text style={styles.autoAssignInfoText}>System will intelligently assign this lead.</Text>
+              </View>
+            )}
+          </View>
+
+          {error ? (
+            <View style={styles.errorContainer}>
+              <X size={14} color={Colors.status.error} />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleAssign}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color={Colors.background} />
+            ) : (
+              <Text style={styles.buttonText}>Confirm Assignment</Text>
+            )}
+          </TouchableOpacity>
         </View>
-
-        <Text style={styles.label}>Client Name *</Text>
-        <TextInput
-          style={styles.input}
-          value={formData.clientName}
-          onChangeText={(text) => setFormData({ ...formData, clientName: text })}
-          placeholder="Enter client name"
-          returnKeyType="next"
-          autoCapitalize="words"
-        />
-
-        <Text style={styles.label}>Country Code *</Text>
-        <TouchableOpacity
-          style={styles.dropdownButton}
-          onPress={() => setShowCountryCodePicker(true)}
-        >
-          <Text style={styles.dropdownButtonTextSelected}>
-            {getSelectedCountry()}
-          </Text>
-          <ChevronDown size={20} color="#666" />
-        </TouchableOpacity>
-
-        <Text style={styles.label}>Contact Number *</Text>
-        <View style={styles.contactNumberRow}>
-          <TextInput
-            style={styles.contactNumberInput}
-            value={formData.contactNumber}
-            onChangeText={(text) => setFormData({ ...formData, contactNumber: text })}
-            placeholder="Enter contact number"
-            keyboardType="phone-pad"
-            returnKeyType="next"
-          />
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={handleCall}
-          >
-            <Phone size={20} color="#10b981" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={handleWhatsApp}
-          >
-            <MessageCircle size={20} color="#25D366" />
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.label}>Number of Pax *</Text>
-        <TextInput
-          style={styles.input}
-          value={formData.noOfPax}
-          onChangeText={(text) => setFormData({ ...formData, noOfPax: text })}
-          placeholder="Enter number of passengers"
-          keyboardType="numeric"
-          returnKeyType="next"
-        />
-
-        <Text style={styles.label}>Place/Destination *</Text>
-        <TextInput
-          style={styles.input}
-          value={formData.place}
-          onChangeText={(text) => setFormData({ ...formData, place: text })}
-          placeholder="Enter destination"
-          returnKeyType="next"
-          autoCapitalize="words"
-        />
-
-        <Text style={styles.label}>Date Type</Text>
-        <View style={styles.radioGroup}>
-          <TouchableOpacity
-            style={[
-              styles.radioButton,
-              formData.dateType === 'exact' && styles.radioButtonActive,
-            ]}
-            onPress={() => setFormData({ ...formData, dateType: 'exact' })}
-          >
-            <Text
-              style={[
-                styles.radioButtonText,
-                formData.dateType === 'exact' && styles.radioButtonTextActive,
-              ]}
-            >
-              Exact Date
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.radioButton,
-              formData.dateType === 'month' && styles.radioButtonActive,
-            ]}
-            onPress={() => setFormData({ ...formData, dateType: 'month' })}
-          >
-            <Text
-              style={[
-                styles.radioButtonText,
-                formData.dateType === 'month' && styles.radioButtonTextActive,
-              ]}
-            >
-              Month Only
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {formData.dateType === 'exact' ? (
-          <DateTimePickerComponent
-            label="Travel Date *"
-            value={selectedTravelDate}
-            onChange={(date) => {
-              setSelectedTravelDate(date);
-              setFormData({ ...formData, travelDate: date.toISOString().split('T')[0] });
-            }}
-            mode="date"
-          />
-        ) : (
-          <>
-            <Text style={styles.label}>Travel Month *</Text>
-            <TouchableOpacity
-              style={styles.dropdownButton}
-              onPress={() => setShowMonthPicker(true)}
-            >
-              <Text style={formData.travelMonth ? styles.dropdownButtonTextSelected : styles.dropdownButtonText}>
-                {formData.travelMonth || 'Select month and year'}
-              </Text>
-              <ChevronDown size={20} color="#666" />
-            </TouchableOpacity>
-          </>
-        )}
-
-        <Text style={styles.label}>Expected Budget *</Text>
-        <TextInput
-          style={styles.input}
-          value={formData.expectedBudget}
-          onChangeText={(text) => setFormData({ ...formData, expectedBudget: text })}
-          placeholder="Enter budget amount"
-          keyboardType="decimal-pad"
-          returnKeyType="next"
-        />
-
-        <Text style={styles.label}>Remark</Text>
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          value={formData.remark}
-          onChangeText={(text) => setFormData({ ...formData, remark: text })}
-          placeholder="Enter any additional remarks"
-          multiline
-          numberOfLines={4}
-          returnKeyType="done"
-          blurOnSubmit={true}
-        />
-
-        <Text style={styles.label}>Assign to Sales Person *</Text>
-        <TouchableOpacity
-          style={styles.dropdownButton}
-          onPress={() => setShowSalesPersonPicker(true)}
-        >
-          <Text style={formData.assignedTo ? styles.dropdownButtonTextSelected : styles.dropdownButtonText}>
-            {getSelectedSalesPerson()}
-          </Text>
-          <ChevronDown size={20} color="#666" />
-        </TouchableOpacity>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleAssign}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Assign Lead</Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.spacer} />
       </ScrollView>
 
-      <Modal
-        visible={showMonthPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowMonthPicker(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowMonthPicker(false)}
-        >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Travel Month</Text>
-              <TouchableOpacity onPress={() => setShowMonthPicker(false)}>
-                <Text style={styles.modalClose}>Close</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.monthList}>
-              {monthYearOptions.map((monthYear) => (
-                <TouchableOpacity
-                  key={monthYear}
-                  style={[
-                    styles.monthOption,
-                    formData.travelMonth === monthYear && styles.monthOptionActive,
-                  ]}
-                  onPress={() => {
-                    setFormData({ ...formData, travelMonth: monthYear });
-                    setShowMonthPicker(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.monthOptionText,
-                      formData.travelMonth === monthYear && styles.monthOptionTextActive,
-                    ]}
-                  >
-                    {monthYear}
-                  </Text>
-                  {formData.travelMonth === monthYear && (
-                    <Check size={20} color="#3b82f6" />
-                  )}
+      {/* Modals */}
+      {[
+        { visible: showMonthPicker, setVisible: setShowMonthPicker, title: 'Travel Month', options: monthYearOptions, current: formData.travelMonth, field: 'travelMonth' },
+        { visible: showCountryCodePicker, setVisible: setShowCountryCodePicker, title: 'Country Code', options: countryCodes, current: formData.countryCode, field: 'countryCode' },
+        { visible: showSourcePicker, setVisible: setShowSourcePicker, title: 'Lead Source', options: leadSources, current: formData.leadSource, field: 'leadSource' }
+      ].map((modal, idx) => (
+        <Modal key={idx} visible={modal.visible} transparent animationType="slide" onRequestClose={() => modal.setVisible(false)}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => modal.setVisible(false)}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{modal.title}</Text>
+                <TouchableOpacity onPress={() => modal.setVisible(false)} style={styles.modalClose}>
+                  <X size={20} color={Colors.text.primary} />
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      <Modal
-        visible={showCountryCodePicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowCountryCodePicker(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowCountryCodePicker(false)}
-        >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Country Code</Text>
-              <TouchableOpacity onPress={() => setShowCountryCodePicker(false)}>
-                <Text style={styles.modalClose}>Close</Text>
-              </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
+                {modal.options.map((option: any) => {
+                  const val = typeof option === 'string' ? option : option.code;
+                  const label = typeof option === 'string' ? option : `${option.code} (${option.name})`;
+                  const isActive = modal.current === val;
+                  return (
+                    <TouchableOpacity
+                      key={val}
+                      style={[styles.modalOption, isActive && styles.modalOptionActive]}
+                      onPress={() => {
+                        setFormData({ ...formData, [modal.field as any]: val });
+                        modal.setVisible(false);
+                      }}
+                    >
+                      <Text style={[styles.modalOptionText, isActive && styles.modalOptionTextActive]}>
+                        {label}
+                      </Text>
+                      {isActive && <Check size={20} color={Colors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
-            <ScrollView style={styles.monthList}>
-              {countryCodes.map((country) => (
-                <TouchableOpacity
-                  key={country.code}
-                  style={[
-                    styles.monthOption,
-                    formData.countryCode === country.code && styles.monthOptionActive,
-                  ]}
-                  onPress={() => {
-                    setFormData({ ...formData, countryCode: country.code });
-                    setShowCountryCodePicker(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.monthOptionText,
-                      formData.countryCode === country.code && styles.monthOptionTextActive,
-                    ]}
-                  >
-                    {country.code} ({country.name})
-                  </Text>
-                  {formData.countryCode === country.code && (
-                    <Check size={20} color="#3b82f6" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+          </TouchableOpacity>
+        </Modal>
+      ))}
 
       <Modal
         visible={showSalesPersonPicker}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setShowSalesPersonPicker(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowSalesPersonPicker(false)}
-        >
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowSalesPersonPicker(false)}>
           <View style={styles.modalContent}>
+            <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Assign to Sales Person</Text>
-              <TouchableOpacity onPress={() => setShowSalesPersonPicker(false)}>
-                <Text style={styles.modalClose}>Close</Text>
+              <Text style={styles.modalTitle}>Select Agent</Text>
+              <TouchableOpacity onPress={() => setShowSalesPersonPicker(false)} style={styles.modalClose}>
+                <X size={20} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.monthList}>
-              {salesPersons.map((person) => (
-                <TouchableOpacity
-                  key={person.id}
-                  style={[
-                    styles.monthOption,
-                    formData.assignedTo === person.id && styles.monthOptionActive,
-                  ]}
-                  onPress={() => {
-                    setFormData({ ...formData, assignedTo: person.id });
-                    setShowSalesPersonPicker(false);
-                  }}
-                >
-                  <View style={styles.salesPersonPickerInfo}>
-                    <Text
-                      style={[
-                        styles.monthOptionText,
-                        formData.assignedTo === person.id && styles.monthOptionTextActive,
-                      ]}
-                    >
-                      {person.full_name}
-                    </Text>
-                    <Text style={styles.salesPersonPickerEmail}>{person.email}</Text>
-                  </View>
-                  {formData.assignedTo === person.id && (
-                    <Check size={20} color="#3b82f6" />
-                  )}
-                </TouchableOpacity>
-              ))}
+            <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
+              {salesPersons.map((person) => {
+                const isActive = formData.assignedTo === person.id;
+                return (
+                  <TouchableOpacity
+                    key={person.id}
+                    style={[styles.modalOption, isActive && styles.modalOptionActive]}
+                    onPress={() => {
+                      setFormData({ ...formData, assignedTo: person.id });
+                      setShowSalesPersonPicker(false);
+                    }}
+                  >
+                    <View style={styles.salesPersonInfo}>
+                      <Text style={[styles.modalOptionText, isActive && styles.modalOptionTextActive]}>
+                        {person.full_name}
+                      </Text>
+                      <Text style={styles.salesPersonEmail}>{person.email}</Text>
+                    </View>
+                    {isActive && <Check size={20} color={Colors.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
+
+function CheckCircleIcon({ size, color }: { size: number, color: string }) {
+  return <CheckCircle size={size} color={color} />;
+}
+
+import { CheckCircle } from 'lucide-react-native';
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
   },
-  backButton: {
-    padding: 4,
+  headerContent: {
+    flex: 1,
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text.primary,
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  backButton: {
+    marginLeft: -Layout.spacing.sm,
+  },
+  iconButton: {
+    padding: 8,
+    borderRadius: Layout.radius.full,
+    backgroundColor: Colors.background,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
+  },
+  section: {
+    gap: 8,
+  },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: Colors.text.secondary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Layout.shadows.md,
   },
   label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.text.secondary,
     marginBottom: 8,
-    marginTop: 8,
+    marginTop: 16,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    paddingHorizontal: 12,
+  },
+  inputIcon: {
+    marginRight: 10,
   },
   input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    flex: 1,
+    paddingVertical: 14,
     fontSize: 16,
-    marginBottom: 12,
+    color: Colors.text.primary,
+    fontWeight: '600',
+  },
+  inputSimple: {
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    padding: 14,
+    fontSize: 16,
+    color: Colors.text.primary,
+    fontWeight: '600',
+  },
+  textAreaContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    paddingHorizontal: 12,
   },
   textArea: {
+    flex: 1,
     height: 100,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: Colors.text.primary,
+    fontWeight: '600',
     textAlignVertical: 'top',
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 12,
   },
   radioGroup: {
     flexDirection: 'row',
+    gap: 10,
     marginBottom: 12,
-    gap: 8,
   },
   radioButton: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#fff',
+    paddingVertical: 14,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.xl,
+    backgroundColor: Colors.surface,
     alignItems: 'center',
-  },
-  radioButtonActive: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#3b82f6',
   },
   radioButtonText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
-  },
-  radioButtonTextActive: {
-    color: '#fff',
-  },
-  button: {
-    backgroundColor: '#3b82f6',
-    height: 48,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 32,
-  },
-  buttonDisabled: {
-    backgroundColor: '#93c5fd',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  errorText: {
-    color: '#dc2626',
-    fontSize: 14,
-    marginTop: 8,
-    marginBottom: 8,
-    textAlign: 'center',
+    fontSize: 11,
+    color: Colors.text.secondary,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   contactNumberRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
+    gap: 10,
   },
-  contactNumberInput: {
+  contactInputWrapper: {
     flex: 1,
-    backgroundColor: '#fff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    paddingHorizontal: 12,
+  },
+  contactInput: {
+    flex: 1,
+    paddingVertical: 14,
     fontSize: 16,
+    color: Colors.text.primary,
+    fontWeight: '600',
   },
   actionButton: {
     width: 48,
     height: 48,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surfaceHighlight,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  dateInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  dateIcon: {
-    marginRight: 8,
-  },
-  dateInput: {
-    flex: 1,
-    padding: 12,
-    fontSize: 16,
+    ...Layout.shadows.sm,
   },
   dropdownButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
+    backgroundColor: Colors.background,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    padding: 14,
   },
-  dropdownButtonText: {
+  dropdownButtonTextPlaceholder: {
     fontSize: 16,
-    color: '#999',
+    color: Colors.text.tertiary,
+    fontWeight: '500',
   },
   dropdownButtonTextSelected: {
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
+    fontWeight: '700',
+  },
+  tabGroup: {
+    flexDirection: 'row',
+    backgroundColor: Colors.background,
+    padding: 4,
+    borderRadius: Layout.radius.lg,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: Layout.radius.md,
+  },
+  tabButtonActive: {
+    backgroundColor: Colors.surfaceHighlight,
+    ...Layout.shadows.sm,
+  },
+  tabText: {
+    fontSize: 13,
+    color: Colors.text.tertiary,
+    fontWeight: '700',
+  },
+  tabTextActive: {
+    color: Colors.primary,
+  },
+  assignmentBox: {
+    marginTop: 8,
+    padding: Layout.spacing.lg,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Layout.shadows.md,
+  },
+  assignmentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  assignmentTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  assignmentTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: Colors.text.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  autoAssignToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  toggleTrack: {
+    width: 40,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.background,
+    padding: 2,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  toggleTrackActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  toggleThumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.text.tertiary,
+  },
+  toggleThumbActive: {
+    transform: [{ translateX: 18 }],
+    backgroundColor: Colors.background,
+  },
+  autoAssignText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: Colors.text.secondary,
+  },
+  autoAssignInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.background,
+    padding: 14,
+    borderRadius: Layout.radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+  },
+  autoAssignInfoText: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.text.secondary,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  button: {
+    backgroundColor: Colors.primary,
+    height: 58,
+    borderRadius: Layout.radius.xl,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 16,
+    ...Layout.shadows.lg,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  buttonText: {
+    color: Colors.background,
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 16,
+  },
+  errorText: {
+    color: Colors.status.error,
+    fontSize: 13,
+    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    width: '80%',
-    maxHeight: '70%',
-    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Layout.radius.xl,
+    borderTopRightRadius: Layout.radius.xl,
+    maxHeight: '80%',
+    paddingBottom: 40,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 12,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: Layout.spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontSize: 20,
+    fontWeight: '800',
+    color: Colors.text.primary,
   },
   modalClose: {
-    fontSize: 16,
-    color: '#3b82f6',
-    fontWeight: '600',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  monthList: {
-    maxHeight: 400,
+  modalList: {
+    padding: Layout.spacing.md,
   },
-  monthOption: {
+  modalOption: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    padding: 18,
+    borderRadius: Layout.radius.lg,
+    marginBottom: 8,
+    backgroundColor: Colors.background,
   },
-  monthOptionActive: {
-    backgroundColor: '#e0f2fe',
+  modalOptionActive: {
+    backgroundColor: Colors.primary + '10',
+    borderColor: Colors.primary,
+    borderWidth: 1,
   },
-  monthOptionText: {
+  modalOptionText: {
     fontSize: 16,
-    color: '#1a1a1a',
-  },
-  monthOptionTextActive: {
-    color: '#3b82f6',
+    color: Colors.text.secondary,
     fontWeight: '600',
   },
-  salesPersonPickerInfo: {
+  modalOptionTextActive: {
+    color: Colors.primary,
+    fontWeight: '800',
+  },
+  salesPersonInfo: {
     flex: 1,
   },
-  salesPersonPickerEmail: {
-    fontSize: 14,
-    color: '#666',
+  salesPersonEmail: {
+    fontSize: 12,
+    color: Colors.text.tertiary,
     marginTop: 4,
+    fontWeight: '500',
   },
+  spacer: {
+    height: 100,
+  }
 });

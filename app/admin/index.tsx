@@ -1,13 +1,16 @@
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { UserPlus, ListPlus, BarChart3, Download, LogOut, MessageCircle, Bell, BookOpen, Map } from 'lucide-react-native';
+import { UserPlus, ListPlus, BarChart3, Download, LogOut, MessageCircle, Bell, BookOpen, Map, Trophy, Target, MessageSquare, ChevronRight, Settings } from 'lucide-react-native';
+import { Colors, Layout } from '@/constants/Colors';
+import NotificationBar from '@/components/NotificationBar';
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   useEffect(() => {
@@ -40,6 +43,12 @@ export default function AdminDashboard() {
     }, [])
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchUnreadNotifications();
+    setRefreshing(false);
+  }, []);
+
   const fetchUnreadNotifications = async () => {
     try {
       const { count } = await supabase
@@ -59,190 +68,264 @@ export default function AdminDashboard() {
     router.replace('/');
   };
 
-  const menuItems = [
+  const sections = [
     {
-      title: 'Assign New Lead',
-      description: 'Assign tasks to sales persons',
-      icon: ListPlus,
-      route: '/admin/assign-lead',
-      color: '#3b82f6',
+      title: 'Lead Management',
+      items: [
+        {
+          title: 'Assign New Lead',
+          description: 'Assign tasks to sales persons',
+          icon: ListPlus,
+          route: '/admin/assign-lead',
+          color: Colors.primary,
+        },
+      ],
     },
     {
-      title: 'Add New Sales Person',
-      description: 'Create and manage sales team',
-      icon: UserPlus,
-      route: '/admin/add-sales-person',
-      color: '#10b981',
+      title: 'Team Management',
+      items: [
+        {
+          title: 'Add New Sales Person',
+          description: 'Create and manage sales team',
+          icon: UserPlus,
+          route: '/admin/add-sales-person',
+          color: '#10b981', // Emerald
+        },
+        {
+          title: 'Performance Leaderboard',
+          description: 'Monthly sales rankings & goals',
+          icon: Trophy,
+          route: '/admin/leaderboard',
+          color: '#f59e0b', // Amber
+        },
+        {
+          title: 'Manage Targets',
+          description: 'Set monthly salesperson goals',
+          icon: Target,
+          route: '/admin/manage-targets',
+          color: '#6366f1', // Indigo
+        },
+      ],
     },
     {
-      title: 'Manage Destinations',
-      description: 'Add and manage tour destinations',
-      icon: Map,
-      route: '/admin/manage-destinations',
-      color: '#f59e0b',
+      title: 'Operations & Content',
+      items: [
+        {
+          title: 'Manage Destinations',
+          description: 'Add and manage tour destinations',
+          icon: Map,
+          route: '/admin/manage-destinations',
+          color: '#8b5cf6', // Violet
+        },
+        {
+          title: 'Saved Itinerary',
+          description: 'Create and manage tour packages',
+          icon: BookOpen,
+          route: '/admin/saved-itinerary',
+          color: '#a78bfa', // Light Purple
+        },
+      ],
     },
     {
-      title: 'Saved Itinerary',
-      description: 'Create and manage tour packages',
-      icon: BookOpen,
-      route: '/admin/saved-itinerary',
-      color: '#ec4899',
-    },
-    {
-      title: 'Analysis',
-      description: 'View team performance metrics',
-      icon: BarChart3,
-      route: '/admin/analysis',
-      color: '#6366f1',
-    },
-    {
-      title: 'Export Data',
-      description: 'Download reports and sheets',
-      icon: Download,
-      route: '/admin/export',
-      color: '#8b5cf6',
+      title: 'Analytics & Feedback',
+      items: [
+        {
+          title: 'Analysis',
+          description: 'View team performance metrics',
+          icon: BarChart3,
+          route: '/admin/analysis',
+          color: '#ec4899', // Pink
+        },
+        {
+          title: 'Customer Feedback',
+          description: 'View guest reviews and ratings',
+          icon: MessageSquare,
+          route: '/admin/feedback',
+          color: '#f43f5e', // Rose
+        },
+        {
+          title: 'Export Data',
+          description: 'Download reports and sheets',
+          icon: Download,
+          route: '/admin/export',
+          color: '#64748b', // Slate
+        },
+      ],
     },
   ];
 
   return (
     <View style={styles.container}>
+      <NotificationBar userId={user?.id || ''} />
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Admin Dashboard</Text>
-          <Text style={styles.headerSubtitle}>Welcome, {user?.full_name}</Text>
+          <Text style={styles.headerTitle}>Admin Panel</Text>
+          <Text style={styles.headerSubtitle}>Welcome, {user?.full_name?.split(' ')[0]}</Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push('/sales/notifications' as any)} style={styles.notificationButton}>
-            <Bell size={24} color="#8b5cf6" />
+          <TouchableOpacity onPress={() => router.push('/sales/notifications')} style={styles.iconButton}>
+            <Bell size={24} color={Colors.text.primary} />
             {unreadNotifications > 0 && (
               <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>{unreadNotifications > 9 ? '9+' : unreadNotifications}</Text>
+                <Text style={styles.notificationBadgeText}>
+                  {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                </Text>
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/admin/chat' as any)} style={styles.chatButton}>
-            <MessageCircle size={24} color="#3b82f6" />
+          <TouchableOpacity onPress={() => router.push('/admin/chat')} style={styles.iconButton}>
+            <MessageCircle size={24} color={Colors.primary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-            <LogOut size={24} color="#dc2626" />
+          <TouchableOpacity onPress={handleLogout} style={styles.iconButton}>
+            <LogOut size={24} color={Colors.status.error} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {menuItems.map((item, index) => (
-          <TouchableOpacity
-            key={index}
-            style={styles.menuCard}
-            onPress={() => router.push(item.route as any)}
-          >
-            <View style={[styles.iconContainer, { backgroundColor: item.color }]}>
-              <item.icon size={28} color="#fff" />
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {sections.map((section, sIndex) => (
+          <View key={sIndex} style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+            <View style={styles.grid}>
+              {section.items.map((item, iIndex) => (
+                <TouchableOpacity
+                  key={iIndex}
+                  style={styles.menuCard}
+                  onPress={() => router.push(item.route as any)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.iconContainer, { backgroundColor: item.color + '15' }]}>
+                    <item.icon size={24} color={item.color} />
+                  </View>
+                  <View style={styles.menuTextContainer}>
+                    <Text style={styles.menuTitle}>{item.title}</Text>
+                    <Text style={styles.menuDescription}>{item.description}</Text>
+                  </View>
+                  <ChevronRight size={16} color={Colors.text.tertiary} />
+                </TouchableOpacity>
+              ))}
             </View>
-            <View style={styles.menuTextContainer}>
-              <Text style={styles.menuTitle}>{item.title}</Text>
-              <Text style={styles.menuDescription}>{item.description}</Text>
-            </View>
-          </TouchableOpacity>
+          </View>
         ))}
+        <View style={styles.spacer} />
       </ScrollView>
-    </View>
+    </View >
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 20,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontSize: 26,
+    fontWeight: '800',
+    color: Colors.text.primary,
+    letterSpacing: -0.5,
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+    fontSize: 15,
+    color: Colors.text.secondary,
+    marginTop: 2,
+    fontWeight: '500',
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
+    alignItems: 'center',
   },
-  notificationButton: {
+  iconButton: {
     padding: 8,
-    position: 'relative',
+    borderRadius: Layout.radius.full,
+    backgroundColor: Colors.background,
   },
   notificationBadge: {
     position: 'absolute',
-    top: 0,
-    right: 0,
-    backgroundColor: '#dc2626',
+    top: 4,
+    right: 4,
+    backgroundColor: Colors.status.error,
     borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    minWidth: 18,
+    height: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: Colors.surface,
   },
   notificationBadgeText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 10,
     fontWeight: 'bold',
-  },
-  chatButton: {
-    padding: 8,
-  },
-  logoutButton: {
-    padding: 8,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
+  },
+  sectionContainer: {
+    marginBottom: Layout.spacing.xl,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: Layout.spacing.md,
+    marginLeft: 4,
+  },
+  grid: {
+    gap: Layout.spacing.md,
   },
   menuCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
+    padding: Layout.spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Layout.shadows.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
+    width: 48,
+    height: 48,
+    borderRadius: Layout.radius.md,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: Layout.spacing.md,
   },
   menuTextContainer: {
     flex: 1,
   },
   menuTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 4,
+    color: Colors.text.primary,
+    marginBottom: 2,
   },
   menuDescription: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 13,
+    color: Colors.text.tertiary,
   },
+  spacer: {
+    height: 40,
+  }
 });

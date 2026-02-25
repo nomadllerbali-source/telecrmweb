@@ -1,12 +1,13 @@
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert, Modal, Linking, TouchableWithoutFeedback } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Lead, Reminder } from '@/types';
-import { ArrowLeft, MapPin, Users, Calendar, CheckCircle, Bell, X } from 'lucide-react-native';
+import { ArrowLeft, MapPin, Users, Calendar, CheckCircle, Bell, X, MessageSquare } from 'lucide-react-native';
 import DateTimePickerComponent from '@/components/DateTimePicker';
 import { calendarService } from '@/services/calendar';
+import { Colors, Layout } from '@/constants/Colors';
 
 export default function ConfirmedLeadsScreen() {
   const { user } = useAuth();
@@ -154,10 +155,30 @@ This is a 7-day advance reminder for the travel date.`;
     }
   };
 
+  const handleRequestFeedback = async (lead: Lead) => {
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({ feedback_requested_at: new Date().toISOString() })
+        .eq('id', lead.id);
+
+      if (error) throw error;
+
+      const message = `Hi ${lead.client_name}! 👋 Hope you had a wonderful trip to ${lead.place}. %0A%0AWe'd love to hear about your experience! Could you please take a moment to rate us? %0A%0A*Rating scale: 1 (Poor) to 5 (Excellent)*%0A%0AReply with your rating and any comments!`;
+      const phoneNumber = (lead.country_code + lead.contact_number).replace(/\+/g, '');
+      const url = `https://wa.me/${phoneNumber}?text=${message}`;
+
+      await Linking.openURL(url);
+      fetchLeads();
+    } catch (err: any) {
+      Alert.alert('Error', 'Failed to request feedback');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#10b981" />
+        <ActivityIndicator size="large" color={Colors.status.success} />
       </View>
     );
   }
@@ -167,7 +188,7 @@ This is a 7-day advance reminder for the travel date.`;
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <View style={styles.iconContainer}>
-            <ArrowLeft size={24} color="#1a1a1a" />
+            <ArrowLeft size={24} color={Colors.text.primary} />
           </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Confirmed Leads</Text>
@@ -187,7 +208,7 @@ This is a 7-day advance reminder for the travel date.`;
                 <View style={styles.confirmedBadge}>
                   <View style={styles.badgeContent}>
                     <View style={styles.iconContainer}>
-                      <CheckCircle size={16} color="#10b981" />
+                      <CheckCircle size={16} color={Colors.text.inverse} />
                     </View>
                     <Text style={styles.confirmedBadgeText}>CONFIRMED</Text>
                   </View>
@@ -198,7 +219,7 @@ This is a 7-day advance reminder for the travel date.`;
                 <View style={styles.detailRow}>
                   <View style={styles.detailRowContent}>
                     <View style={styles.iconContainer}>
-                      <MapPin size={16} color="#666" />
+                      <MapPin size={16} color={Colors.text.secondary} />
                     </View>
                     <Text style={styles.detailText}>{lead.place}</Text>
                   </View>
@@ -206,7 +227,7 @@ This is a 7-day advance reminder for the travel date.`;
                 <View style={styles.detailRow}>
                   <View style={styles.detailRowContent}>
                     <View style={styles.iconContainer}>
-                      <Users size={16} color="#666" />
+                      <Users size={16} color={Colors.text.secondary} />
                     </View>
                     <Text style={styles.detailText}>{lead.no_of_pax} Pax</Text>
                   </View>
@@ -214,7 +235,7 @@ This is a 7-day advance reminder for the travel date.`;
                 <View style={styles.detailRow}>
                   <View style={styles.detailRowContent}>
                     <View style={styles.iconContainer}>
-                      <Calendar size={16} color="#666" />
+                      <Calendar size={16} color={Colors.text.secondary} />
                     </View>
                     <Text style={styles.detailText}>
                       {lead.travel_date || lead.travel_month || 'Date TBD'}
@@ -228,8 +249,17 @@ This is a 7-day advance reminder for the travel date.`;
                   style={styles.reminderButton}
                   onPress={() => openReminderModal(lead)}
                 >
-                  <Bell size={18} color="#fff" />
-                  <Text style={styles.reminderButtonText}>Add Reminder</Text>
+                  <Bell size={18} color={Colors.text.inverse} />
+                  <Text style={styles.reminderButtonText}>Reminder</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.feedbackButton, lead.feedback_requested_at && styles.feedbackButtonDisabled]}
+                  onPress={() => handleRequestFeedback(lead)}
+                >
+                  <MessageSquare size={18} color={lead.feedback_requested_at ? '#94a3b8' : Colors.text.inverse} />
+                  <Text style={[styles.feedbackButtonText, lead.feedback_requested_at && styles.feedbackButtonDisabledText]}>
+                    {lead.feedback_requested_at ? 'Requested' : 'Feedback'}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.allocateButton}
@@ -244,61 +274,65 @@ This is a 7-day advance reminder for the travel date.`;
       </ScrollView>
 
       <Modal visible={reminderModal} transparent animationType="slide" onRequestClose={() => setReminderModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Set Travel Reminder</Text>
-              <TouchableOpacity onPress={() => setReminderModal(false)}>
-                <X size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            {selectedLead && (
-              <ScrollView style={styles.modalBody}>
-                <View style={styles.clientInfo}>
-                  <Text style={styles.clientName}>{selectedLead.client_name}</Text>
-                  <Text style={styles.clientDetail}>{selectedLead.place} • {selectedLead.no_of_pax} Pax</Text>
+        <TouchableWithoutFeedback onPress={() => setReminderModal(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Set Travel Reminder</Text>
+                  <TouchableOpacity onPress={() => setReminderModal(false)}>
+                    <X size={24} color={Colors.text.primary} />
+                  </TouchableOpacity>
                 </View>
 
-                <View style={styles.formGroup}>
-                  <Text style={styles.formLabel}>Travel Date</Text>
-                  <DateTimePickerComponent
-                    value={travelDate}
-                    onChange={setTravelDate}
-                    mode="date"
-                    placeholder="Select travel date"
-                  />
-                </View>
+                {selectedLead && (
+                  <ScrollView style={styles.modalBody}>
+                    <View style={styles.clientInfo}>
+                      <Text style={styles.clientName}>{selectedLead.client_name}</Text>
+                      <Text style={styles.clientDetail}>{selectedLead.place} • {selectedLead.no_of_pax} Pax</Text>
+                    </View>
 
-                <View style={styles.formGroup}>
-                  <Text style={styles.formLabel}>Reminder Time (7 days before)</Text>
-                  <DateTimePickerComponent
-                    value={reminderTime}
-                    onChange={setReminderTime}
-                    mode="time"
-                    placeholder="Select reminder time"
-                  />
-                </View>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.formLabel}>Travel Date</Text>
+                      <DateTimePickerComponent
+                        value={travelDate}
+                        onChange={setTravelDate}
+                        mode="date"
+                        placeholder="Select travel date"
+                      />
+                    </View>
 
-                {travelDate && (
-                  <View style={styles.reminderInfo}>
-                    <Text style={styles.reminderInfoText}>
-                      Reminder will be set for: {calculateReminderDate(travelDate).toISOString().split('T')[0]}
-                    </Text>
-                  </View>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.formLabel}>Reminder Time (7 days before)</Text>
+                      <DateTimePickerComponent
+                        value={reminderTime}
+                        onChange={setReminderTime}
+                        mode="time"
+                        placeholder="Select reminder time"
+                      />
+                    </View>
+
+                    {travelDate && (
+                      <View style={styles.reminderInfo}>
+                        <Text style={styles.reminderInfoText}>
+                          Reminder will be set for: {calculateReminderDate(travelDate).toISOString().split('T')[0]}
+                        </Text>
+                      </View>
+                    )}
+
+                    <TouchableOpacity
+                      style={[styles.saveButton, savingReminder && styles.saveButtonDisabled]}
+                      onPress={saveReminder}
+                      disabled={savingReminder}
+                    >
+                      <Text style={styles.saveButtonText}>{savingReminder ? 'Saving...' : 'Save Reminder'}</Text>
+                    </TouchableOpacity>
+                  </ScrollView>
                 )}
-
-                <TouchableOpacity
-                  style={[styles.saveButton, savingReminder && styles.saveButtonDisabled]}
-                  onPress={saveReminder}
-                  disabled={savingReminder}
-                >
-                  <Text style={styles.saveButtonText}>{savingReminder ? 'Saving...' : 'Save Reminder'}</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            )}
+              </View>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
     </View>
   );
@@ -307,37 +341,39 @@ This is a 7-day advance reminder for the travel date.`;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
   },
   backButton: {
     padding: 4,
+    borderRadius: Layout.radius.full,
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   emptyContainer: {
     padding: 40,
@@ -345,18 +381,16 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   leadCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Layout.shadows.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   leadHeader: {
     flexDirection: 'row',
@@ -366,15 +400,15 @@ const styles = StyleSheet.create({
   },
   leadName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
     flex: 1,
   },
   confirmedBadge: {
-    backgroundColor: '#d1fae5',
+    backgroundColor: Colors.status.success,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: Layout.radius.sm,
   },
   badgeContent: {
     flexDirection: 'row',
@@ -386,9 +420,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmedBadgeText: {
-    color: '#10b981',
+    color: Colors.text.inverse,
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   leadDetails: {
     gap: 8,
@@ -404,7 +438,7 @@ const styles = StyleSheet.create({
   },
   detailText: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   buttonGroup: {
     flexDirection: 'row',
@@ -412,28 +446,29 @@ const styles = StyleSheet.create({
   },
   reminderButton: {
     flex: 1,
-    backgroundColor: '#3b82f6',
+    backgroundColor: Colors.primary,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
   },
   reminderButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 14,
     fontWeight: '600',
   },
   allocateButton: {
     flex: 1,
-    backgroundColor: '#8b5cf6',
+    backgroundColor: Colors.accent,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   allocateButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -443,45 +478,46 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     maxHeight: '90%',
-    paddingBottom: 20,
+    paddingBottom: Layout.spacing.xl,
+    ...Layout.shadows.lg,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingHorizontal: Layout.spacing.lg,
+    paddingTop: Layout.spacing.lg,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   modalBody: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   clientInfo: {
     marginBottom: 24,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
   },
   clientName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
   clientDetail: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   formGroup: {
     marginBottom: 16,
@@ -489,34 +525,56 @@ const styles = StyleSheet.create({
   formLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: Colors.text.secondary,
     marginBottom: 8,
   },
   reminderInfo: {
-    backgroundColor: '#f0f4ff',
+    backgroundColor: Colors.surfaceHighlight,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: Layout.radius.md,
     marginBottom: 20,
   },
   reminderInfoText: {
     fontSize: 13,
-    color: '#3b82f6',
+    color: Colors.primary,
     fontWeight: '500',
   },
   saveButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: Colors.status.success,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     alignItems: 'center',
     marginTop: 8,
+    ...Layout.shadows.sm,
   },
   saveButtonDisabled: {
-    backgroundColor: '#ccc',
+    opacity: 0.6,
   },
   saveButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 16,
     fontWeight: '600',
+  },
+  feedbackButton: {
+    flex: 1,
+    backgroundColor: '#f59e0b',
+    paddingVertical: 12,
+    borderRadius: Layout.radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  feedbackButtonDisabled: {
+    backgroundColor: Colors.surfaceHighlight,
+  },
+  feedbackButtonText: {
+    color: Colors.text.inverse,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  feedbackButtonDisabledText: {
+    color: '#94a3b8',
   },
 });

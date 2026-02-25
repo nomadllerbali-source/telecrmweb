@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { X, AlertCircle, Flame, Clock } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
+import { Colors, Layout } from '@/constants/Colors';
 
 interface Notification {
   id: string;
@@ -142,11 +143,11 @@ export default function NotificationBar({ userId }: NotificationBarProps) {
   const getLeadTypeColor = (leadType: string) => {
     switch (leadType) {
       case 'hot':
-        return '#dc2626';
+        return Colors.status.error;
       case 'urgent':
-        return '#f97316';
+        return Colors.status.warning;
       default:
-        return '#3b82f6';
+        return Colors.status.info;
     }
   };
 
@@ -182,8 +183,8 @@ export default function NotificationBar({ userId }: NotificationBarProps) {
             onPress={() => handleNotificationPress(notification)}
             activeOpacity={0.9}
           >
-            <View style={[styles.iconContainer, { backgroundColor: `${color}20` }]}>
-              <IconComponent size={20} color={color} />
+            <View style={[styles.iconContainer, { backgroundColor: `${color}15` }]}>
+              <IconComponent size={18} color={color} />
             </View>
 
             <View style={styles.content}>
@@ -200,9 +201,10 @@ export default function NotificationBar({ userId }: NotificationBarProps) {
 
             <TouchableOpacity
               onPress={() => dismissNotification(notification.id)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={styles.closeButton}
             >
-              <X size={18} color="#999" />
+              <X size={16} color={Colors.text.tertiary} />
             </TouchableOpacity>
           </TouchableOpacity>
         );
@@ -213,29 +215,27 @@ export default function NotificationBar({ userId }: NotificationBarProps) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingHorizontal: Layout.spacing.md,
+    paddingVertical: Layout.spacing.sm,
     gap: 8,
     maxHeight: 300,
   },
   notificationItem: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
+    padding: 14,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 12,
     borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Layout.shadows.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+    width: 38,
+    height: 38,
+    borderRadius: Layout.radius.md,
     justifyContent: 'center',
     alignItems: 'center',
     flexShrink: 0,
@@ -251,19 +251,25 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '800',
+    color: Colors.text.primary,
     flex: 1,
   },
   time: {
-    fontSize: 12,
-    color: '#999',
+    fontSize: 11,
+    color: Colors.text.tertiary,
     marginLeft: 8,
+    fontWeight: '600',
     flexShrink: 0,
   },
   message: {
     fontSize: 13,
-    color: '#666',
+    color: Colors.text.secondary,
     lineHeight: 18,
+    fontWeight: '500',
   },
+  closeButton: {
+    padding: 4,
+    marginLeft: 4,
+  }
 });

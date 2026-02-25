@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { ArrowLeft, ChevronDown, Check, Phone } from 'lucide-react-native';
+import { Colors, Layout } from '@/constants/Colors';
 
 interface CountryCode {
   code: string;
@@ -110,7 +111,7 @@ export default function AddLeadScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#333" />
+          <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Add New Lead</Text>
         <View style={styles.placeholder} />
@@ -118,7 +119,9 @@ export default function AddLeadScreen() {
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         <View style={styles.card}>
-          <Phone size={48} color="#14b8a6" style={styles.icon} />
+          <View style={styles.iconContainer}>
+            <Phone size={32} color={Colors.primary} />
+          </View>
           <Text style={styles.title}>Start with Contact Details</Text>
           <Text style={styles.subtitle}>Enter the phone number to create a new lead</Text>
 
@@ -132,7 +135,7 @@ export default function AddLeadScreen() {
               <Text style={styles.countryText}>
                 {selectedCountry.name} ({selectedCountry.code})
               </Text>
-              <ChevronDown size={20} color="#666" />
+              <ChevronDown size={20} color={Colors.text.tertiary} />
             </TouchableOpacity>
           </View>
 
@@ -143,6 +146,7 @@ export default function AddLeadScreen() {
               value={contactNumber}
               onChangeText={setContactNumber}
               placeholder="Enter contact number"
+              placeholderTextColor={Colors.text.tertiary}
               keyboardType="phone-pad"
               maxLength={15}
             />
@@ -157,7 +161,7 @@ export default function AddLeadScreen() {
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={Colors.text.inverse} />
             ) : (
               <Text style={styles.submitButtonText}>Add Lead</Text>
             )}
@@ -194,7 +198,7 @@ export default function AddLeadScreen() {
                     {country.name} ({country.code})
                   </Text>
                   {selectedCountry.code === country.code && (
-                    <Check size={20} color="#14b8a6" />
+                    <Check size={20} color={Colors.primary} />
                   )}
                 </TouchableOpacity>
               ))}
@@ -209,25 +213,28 @@ export default function AddLeadScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 20,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+    ...Layout.shadows.sm,
   },
   backButton: {
     padding: 8,
+    borderRadius: Layout.radius.full,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   placeholder: {
     width: 40,
@@ -236,49 +243,56 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 24,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.xl,
     alignItems: 'center',
+    ...Layout.shadows.md,
   },
-  icon: {
-    marginBottom: 16,
+  iconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Layout.spacing.lg,
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
     marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 32,
+    fontSize: 15,
+    color: Colors.text.secondary,
+    marginBottom: Layout.spacing.xl,
     textAlign: 'center',
   },
   formGroup: {
     width: '100%',
-    marginBottom: 20,
+    marginBottom: Layout.spacing.lg,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: Colors.text.secondary,
     marginBottom: 8,
   },
   countrySelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: Layout.spacing.md,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    backgroundColor: Colors.background,
   },
   countryFlag: {
     fontSize: 24,
@@ -287,42 +301,45 @@ const styles = StyleSheet.create({
   countryText: {
     flex: 1,
     fontSize: 16,
-    color: '#333',
+    color: Colors.text.primary,
+    fontWeight: '500',
   },
   input: {
-    paddingHorizontal: 16,
+    paddingHorizontal: Layout.spacing.md,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    backgroundColor: Colors.background,
     fontSize: 16,
-    color: '#333',
+    color: Colors.text.primary,
+    fontWeight: '500',
   },
   hint: {
     fontSize: 12,
-    color: '#999',
+    color: Colors.text.tertiary,
     marginTop: 4,
   },
   errorText: {
-    color: '#ef4444',
+    color: Colors.status.error,
     fontSize: 14,
-    marginBottom: 16,
+    marginBottom: Layout.spacing.md,
     textAlign: 'center',
   },
   submitButton: {
     width: '100%',
-    backgroundColor: '#14b8a6',
+    backgroundColor: Colors.primary,
     paddingVertical: 16,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: Layout.spacing.sm,
+    ...Layout.shadows.md,
   },
   submitButtonDisabled: {
     opacity: 0.6,
   },
   submitButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -332,40 +349,42 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Layout.radius.xl,
+    borderTopRightRadius: Layout.radius.xl,
     maxHeight: '70%',
+    ...Layout.shadows.lg,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: Layout.spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   modalClose: {
     fontSize: 16,
-    color: '#14b8a6',
+    color: Colors.primary,
     fontWeight: '600',
   },
   countryOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: Layout.spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
+    borderBottomColor: Colors.border,
   },
   countryOptionText: {
     flex: 1,
     fontSize: 16,
-    color: '#333',
+    color: Colors.text.primary,
     marginLeft: 12,
   },
 });
+

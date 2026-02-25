@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { User, ChatMessage } from '@/types';
 import { ArrowLeft, Send } from 'lucide-react-native';
+import { Colors, Layout } from '@/constants/Colors';
 
 export default function ChatScreen() {
   const { user } = useAuth();
@@ -144,7 +145,7 @@ export default function ChatScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -158,7 +159,7 @@ export default function ChatScreen() {
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <View style={styles.iconContainer}>
-            <ArrowLeft size={24} color="#1a1a1a" />
+            <ArrowLeft size={24} color={Colors.text.primary} />
           </View>
         </TouchableOpacity>
         <View style={styles.headerInfo}>
@@ -224,9 +225,9 @@ export default function ChatScreen() {
           disabled={!messageText.trim() || sending}
         >
           {sending ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={Colors.text.inverse} />
           ) : (
-            <Send size={20} color="#fff" />
+            <Send size={20} color={Colors.text.inverse} />
           )}
         </TouchableOpacity>
       </View>
@@ -237,26 +238,29 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+    ...Layout.shadows.sm,
   },
   backButton: {
-    padding: 4,
+    padding: 8,
+    borderRadius: Layout.radius.full,
   },
   iconContainer: {
     justifyContent: 'center',
@@ -268,19 +272,19 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   headerSubtitle: {
     fontSize: 12,
-    color: '#666',
+    color: Colors.text.secondary,
     marginTop: 2,
   },
   messagesContainer: {
     flex: 1,
   },
   messagesContent: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   messageContainer: {
     marginBottom: 12,
@@ -294,60 +298,65 @@ const styles = StyleSheet.create({
   messageBubble: {
     maxWidth: '75%',
     padding: 12,
-    borderRadius: 16,
+    borderRadius: Layout.radius.lg,
   },
   myMessageBubble: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: Colors.primary,
     borderBottomRightRadius: 4,
+    ...Layout.shadows.sm,
   },
   theirMessageBubble: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderBottomLeftRadius: 4,
+    ...Layout.shadows.sm,
   },
   messageText: {
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
   myMessageText: {
-    color: '#fff',
+    color: Colors.text.inverse,
   },
   messageTime: {
     fontSize: 11,
-    color: '#666',
+    color: Colors.text.tertiary,
   },
   myMessageTime: {
-    color: '#e0f2fe',
+    color: 'rgba(255, 255, 255, 0.7)',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: 12,
-    backgroundColor: '#fff',
+    padding: Layout.spacing.lg,
+    backgroundColor: Colors.surface,
     borderTopWidth: 1,
-    borderTopColor: '#e5e5e5',
-    gap: 8,
+    borderTopColor: Colors.border,
+    gap: 12,
   },
   input: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: Colors.background,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 20,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 16,
     maxHeight: 100,
+    color: Colors.text.primary,
   },
   sendButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: '#3b82f6',
+    borderRadius: Layout.radius.full,
+    backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    ...Layout.shadows.sm,
   },
   sendButtonDisabled: {
-    backgroundColor: '#93c5fd',
+    opacity: 0.5,
+    backgroundColor: Colors.text.tertiary,
   },
 });

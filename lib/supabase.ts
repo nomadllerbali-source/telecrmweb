@@ -40,6 +40,7 @@ export async function setUserContext(userId: string, userRole?: string) {
     }
     const { error } = await supabase.rpc('set_user_context', {
       user_id: userId,
+      user_role: userRole || 'sales', // Default to sales if not provided
     });
     if (error) {
       console.warn('Error setting user context:', error.message);

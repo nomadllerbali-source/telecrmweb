@@ -9,11 +9,13 @@ import {
   Alert,
   ActivityIndicator,
   Clipboard,
+  Modal,
 } from 'react-native';
-import { useRouter, useNavigation } from 'expo-router';
+import { useRouter, useNavigation, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Plus, Copy, Edit, Search, Filter, X } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { Colors, Layout } from '@/constants/Colors';
 
 interface Itinerary {
   id: string;
@@ -24,6 +26,7 @@ interface Itinerary {
   inclusions: string;
   exclusions: string;
   cost_usd: number;
+  cost_inr: number;
   created_by: string;
   created_at: string;
   destination_id: string | null;
@@ -32,6 +35,7 @@ interface Itinerary {
 export default function SavedItineraryScreen() {
   const router = useRouter();
   const navigation = useNavigation();
+  const { editId } = useLocalSearchParams();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -64,6 +68,8 @@ export default function SavedItineraryScreen() {
     scooter_cost_usd: '',
   });
 
+  const [selectionModalVisible, setSelectionModalVisible] = useState(false);
+  const [itinerarySearch, setItinerarySearch] = useState('');
   const [destinations, setDestinations] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
@@ -90,6 +96,15 @@ export default function SavedItineraryScreen() {
   useEffect(() => {
     filterItineraries();
   }, [itineraries, searchQuery, filterDays, filterPax]);
+
+  useEffect(() => {
+    if (editId && itineraries.length > 0 && destinations.length > 0) {
+      const it = itineraries.find(i => i.id === editId);
+      if (it) {
+        handleEdit(it);
+      }
+    }
+  }, [editId, itineraries, destinations]);
 
   const filterItineraries = () => {
     let filtered = [...itineraries];
@@ -224,12 +239,24 @@ export default function SavedItineraryScreen() {
         created_by: user?.id,
         updated_at: new Date().toISOString(),
         destination_id: destinationId,
+        cost_inr: 0, // Placeholder
       };
 
+      const finalExchangeRate = exchangeRate + 2;
+
       if (editingId) {
+        let transportModeSlug = '';
+        if (editingTransportMode === 'Driver with cab') transportModeSlug = 'driver_with_cab';
+        else if (editingTransportMode === 'Self drive cab') transportModeSlug = 'self_drive_cab';
+        else if (editingTransportMode === 'Self drive scooter') transportModeSlug = 'self_drive_scooter';
+
         const { error } = await supabase
           .from('itineraries')
-          .update(baseData)
+          .update({
+            ...baseData,
+            mode_of_transport: transportModeSlug || null,
+            cost_inr: parseFloat(calculateINR(formData.driver_cost_usd || formData.selfDrive_cost_usd || formData.scooter_cost_usd))
+          })
           .eq('id', editingId);
 
         if (error) throw error;
@@ -242,6 +269,8 @@ export default function SavedItineraryScreen() {
             inclusions: formData.driver_inclusions,
             exclusions: formData.driver_exclusions,
             cost_usd: parseFloat(formData.driver_cost_usd),
+            cost_inr: Math.round(parseFloat(formData.driver_cost_usd) * finalExchangeRate),
+            mode_of_transport: 'driver_with_cab',
           },
           {
             ...baseData,
@@ -249,6 +278,8 @@ export default function SavedItineraryScreen() {
             inclusions: formData.selfDrive_inclusions,
             exclusions: formData.selfDrive_exclusions,
             cost_usd: parseFloat(formData.selfDrive_cost_usd),
+            cost_inr: Math.round(parseFloat(formData.selfDrive_cost_usd) * finalExchangeRate),
+            mode_of_transport: 'self_drive_cab',
           },
           {
             ...baseData,
@@ -256,6 +287,8 @@ export default function SavedItineraryScreen() {
             inclusions: formData.scooter_inclusions,
             exclusions: formData.scooter_exclusions,
             cost_usd: parseFloat(formData.scooter_cost_usd),
+            cost_inr: Math.round(parseFloat(formData.scooter_cost_usd) * finalExchangeRate),
+            mode_of_transport: 'self_drive_scooter',
           },
         ];
 
@@ -295,9 +328,40 @@ export default function SavedItineraryScreen() {
     }
   };
 
+  const populateFromExisting = (itinerary: Itinerary) => {
+    const nameWithoutTransport = itinerary.name.split(' (')[0];
+    const transportMode = itinerary.name.includes('(')
+      ? itinerary.name.split('(')[1].replace(')', '')
+      : '';
+
+    const destination = destinations.find(d => d.id === itinerary.destination_id)?.name || '';
+
+    setFormData({
+      ...formData,
+      destination: destination,
+      name: nameWithoutTransport,
+      days: itinerary.days.toString(),
+      no_of_pax: itinerary.no_of_pax.toString(),
+      full_itinerary: itinerary.full_itinerary,
+      // We only populate the cost/inclusions for the detected transport mode
+      // This is because an itinerary in the database represents ONE transport mode.
+      driver_inclusions: transportMode === 'Driver with cab' ? itinerary.inclusions : formData.driver_inclusions,
+      driver_exclusions: transportMode === 'Driver with cab' ? itinerary.exclusions : formData.driver_exclusions,
+      driver_cost_usd: transportMode === 'Driver with cab' ? itinerary.cost_usd.toString() : formData.driver_cost_usd,
+      selfDrive_inclusions: transportMode === 'Self drive cab' ? itinerary.inclusions : formData.selfDrive_inclusions,
+      selfDrive_exclusions: transportMode === 'Self drive cab' ? itinerary.exclusions : formData.selfDrive_exclusions,
+      selfDrive_cost_usd: transportMode === 'Self drive cab' ? itinerary.cost_usd.toString() : formData.selfDrive_cost_usd,
+      scooter_inclusions: transportMode === 'Self drive scooter' ? itinerary.inclusions : formData.scooter_inclusions,
+      scooter_exclusions: transportMode === 'Self drive scooter' ? itinerary.exclusions : formData.scooter_exclusions,
+      scooter_cost_usd: transportMode === 'Self drive scooter' ? itinerary.cost_usd.toString() : formData.scooter_cost_usd,
+    });
+    setSelectionModalVisible(false);
+    Alert.alert('Success', 'Form populated from existing itinerary. You can now modify it.');
+  };
+
   const copyPackage = (itinerary: Itinerary) => {
     const finalExchangeRate = exchangeRate + 2;
-    const costINR = (itinerary.cost_usd * finalExchangeRate).toFixed(2);
+    const costINR = itinerary.cost_inr || (itinerary.cost_usd * finalExchangeRate);
 
     const packageText = `
 🏝️🌴 *NOMADLLER PVT LTD – EXCLUSIVE BALI PACKAGE* 🇮🇩
@@ -319,7 +383,7 @@ ${itinerary.exclusions}
 
 💰 *PACKAGE COST:*
 • USD: $${itinerary.cost_usd}
-• INR: ₹${costINR}
+• INR: ₹${costINR.toFixed(2)}
 (Exchange Rate: ${finalExchangeRate.toFixed(2)})
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -340,7 +404,7 @@ ${itinerary.exclusions}
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -358,7 +422,7 @@ ${itinerary.exclusions}
           }}
           style={styles.backButton}
         >
-          <ArrowLeft size={24} color="#007AFF" />
+          <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Saved Itineraries</Text>
         <TouchableOpacity
@@ -387,13 +451,13 @@ ${itinerary.exclusions}
           }}
           style={styles.addButton}
         >
-          <Plus size={24} color="#007AFF" />
+          <Plus size={24} color={Colors.text.primary} />
         </TouchableOpacity>
       </View>
 
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
-          <Search size={20} color="#8E8E93" />
+          <Search size={20} color={Colors.text.tertiary} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search itineraries..."
@@ -402,7 +466,7 @@ ${itinerary.exclusions}
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <X size={20} color="#8E8E93" />
+              <X size={20} color={Colors.text.tertiary} />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -410,7 +474,7 @@ ${itinerary.exclusions}
           style={styles.filterButton}
           onPress={() => setShowFilters(!showFilters)}
         >
-          <Filter size={20} color={showFilters ? '#007AFF' : '#8E8E93'} />
+          <Filter size={20} color={showFilters ? Colors.primary : Colors.text.tertiary} />
         </TouchableOpacity>
       </View>
 
@@ -449,9 +513,20 @@ ${itinerary.exclusions}
       <ScrollView style={styles.content}>
         {showForm ? (
           <View style={styles.formCard}>
-            <Text style={styles.formTitle}>
-              {editingId ? 'Edit Itinerary' : 'Add New Itinerary'}
-            </Text>
+            <View style={styles.formHeader}>
+              <Text style={styles.formTitle}>
+                {editingId ? 'Edit Itinerary' : 'Add New Itinerary'}
+              </Text>
+              {!editingId && (
+                <TouchableOpacity
+                  style={styles.selectExistingButton}
+                  onPress={() => setSelectionModalVisible(true)}
+                >
+                  <Copy size={16} color={Colors.primary} />
+                  <Text style={styles.selectExistingButtonText}>Select from Existing</Text>
+                </TouchableOpacity>
+              )}
+            </View>
 
             <Text style={styles.label}>Destination *</Text>
             <ScrollView
@@ -690,7 +765,7 @@ ${itinerary.exclusions}
                 disabled={saving}
               >
                 {saving ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={Colors.text.inverse} />
                 ) : (
                   <Text style={styles.saveButtonText}>
                     {editingId ? 'Update Itinerary' : 'Save All 3 Itineraries'}
@@ -721,7 +796,7 @@ ${itinerary.exclusions}
                     onPress={() => handleEdit(itinerary)}
                     style={styles.actionButton}
                   >
-                    <Edit size={20} color="#007AFF" />
+                    <Edit size={20} color={Colors.primary} />
                   </TouchableOpacity>
                 </View>
 
@@ -760,14 +835,14 @@ ${itinerary.exclusions}
                     <Text style={styles.costLabel}>Cost:</Text>
                     <Text style={styles.costUSD}>${itinerary.cost_usd}</Text>
                     <Text style={styles.costINR}>
-                      ₹{(itinerary.cost_usd * (exchangeRate + 2)).toFixed(2)}
+                      ₹{itinerary.cost_inr ? itinerary.cost_inr.toFixed(2) : (itinerary.cost_usd * (exchangeRate + 2)).toFixed(2)}
                     </Text>
                   </View>
                   <TouchableOpacity
                     style={styles.copyButton}
                     onPress={() => copyPackage(itinerary)}
                   >
-                    <Copy size={20} color="#fff" />
+                    <Copy size={20} color={Colors.text.inverse} />
                     <Text style={styles.copyButtonText}>Copy Package</Text>
                   </TouchableOpacity>
                 </View>
@@ -775,59 +850,107 @@ ${itinerary.exclusions}
             ))
           )
         }
-      </ScrollView >
-    </View >
+      </ScrollView>
+
+      <Modal
+        visible={selectionModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setSelectionModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.selectionModalContent}>
+            <View style={styles.selectionModalHeader}>
+              <Text style={styles.modalTitle}>Select Itinerary</Text>
+              <TouchableOpacity onPress={() => setSelectionModalVisible(false)}>
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalSearchContainer}>
+              <Search size={20} color={Colors.text.tertiary} />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Search itineraries..."
+                value={itinerarySearch}
+                onChangeText={setItinerarySearch}
+              />
+            </View>
+
+            <ScrollView style={styles.selectionList}>
+              {itineraries
+                .filter(it => it.name.toLowerCase().includes(itinerarySearch.toLowerCase()))
+                .map(it => (
+                  <TouchableOpacity
+                    key={it.id}
+                    style={styles.selectionItem}
+                    onPress={() => populateFromExisting(it)}
+                  >
+                    <Text style={styles.selectionItemTitle}>{it.name}</Text>
+                    <Text style={styles.selectionItemSubtitle}>
+                      {it.days} Days • {it.no_of_pax} Pax • ${it.cost_usd}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F2F2F7',
+    backgroundColor: Colors.background,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
-    paddingBottom: 16,
-    backgroundColor: '#fff',
+    paddingBottom: Layout.spacing.lg,
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: Colors.border,
+    ...Layout.shadows.sm,
   },
   backButton: {
     padding: 8,
+    borderRadius: Layout.radius.full,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
-    color: '#000',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   addButton: {
     padding: 8,
+    borderRadius: Layout.radius.full,
   },
   searchContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
+    paddingHorizontal: Layout.spacing.lg,
     paddingVertical: 12,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: Colors.border,
     gap: 12,
   },
   searchBar: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 10,
+    backgroundColor: Colors.background,
+    borderRadius: Layout.radius.lg,
     paddingHorizontal: 12,
     gap: 8,
   },
@@ -835,22 +958,22 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 10,
     fontSize: 16,
-    color: '#000',
+    color: Colors.text.primary,
   },
   filterButton: {
     width: 44,
     height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 10,
+    backgroundColor: Colors.background,
+    borderRadius: Layout.radius.lg,
   },
   filterContainer: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: Colors.border,
   },
   filterRow: {
     flexDirection: 'row',
@@ -862,17 +985,17 @@ const styles = StyleSheet.create({
   filterLabel: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#8E8E93',
+    color: Colors.text.secondary,
     marginBottom: 6,
   },
   filterInput: {
     borderWidth: 1,
-    borderColor: '#E5E5EA',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.md,
     padding: 10,
     fontSize: 16,
-    color: '#000',
-    backgroundColor: '#F9F9F9',
+    color: Colors.text.primary,
+    backgroundColor: Colors.background,
   },
   clearFiltersButton: {
     marginTop: 12,
@@ -881,59 +1004,60 @@ const styles = StyleSheet.create({
   clearFiltersText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FF3B30',
+    color: Colors.status.error,
   },
   content: {
     flex: 1,
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   formCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
     marginBottom: 20,
+    ...Layout.shadows.sm,
   },
   formTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
+    fontWeight: '700',
+    color: Colors.text.primary,
     marginBottom: 16,
   },
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#000',
+    color: Colors.text.primary,
     marginBottom: 8,
     marginTop: 12,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#E5E5EA',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     padding: 12,
     fontSize: 16,
-    color: '#000',
-    backgroundColor: '#F9F9F9',
+    color: Colors.text.primary,
+    backgroundColor: Colors.background,
   },
   textArea: {
     minHeight: 100,
     textAlignVertical: 'top',
   },
   conversionBox: {
-    backgroundColor: '#F0F9FF',
-    borderRadius: 8,
+    backgroundColor: Colors.surfaceHighlight,
+    borderRadius: Layout.radius.md,
     padding: 12,
     marginTop: 12,
   },
   conversionText: {
     fontSize: 14,
-    color: '#007AFF',
+    color: Colors.primary,
     marginBottom: 4,
   },
   conversionAmount: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#007AFF',
+    color: Colors.primary,
   },
   formButtons: {
     flexDirection: 'row',
@@ -943,24 +1067,25 @@ const styles = StyleSheet.create({
   button: {
     flex: 1,
     padding: 14,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#F2F2F7',
+    backgroundColor: Colors.background,
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#007AFF',
+    color: Colors.text.secondary,
   },
   saveButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: Colors.primary,
+    ...Layout.shadows.md,
   },
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: Colors.text.inverse,
   },
   emptyState: {
     alignItems: 'center',
@@ -970,18 +1095,19 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#8E8E93',
+    color: Colors.text.tertiary,
     marginBottom: 8,
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#8E8E93',
+    color: Colors.text.tertiary,
   },
   itineraryCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
     marginBottom: 16,
+    ...Layout.shadows.sm,
   },
   itineraryHeader: {
     flexDirection: 'row',
@@ -991,8 +1117,8 @@ const styles = StyleSheet.create({
   },
   itineraryName: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
+    fontWeight: '700',
+    color: Colors.text.primary,
     flex: 1,
   },
   actionButton: {
@@ -1005,12 +1131,12 @@ const styles = StyleSheet.create({
   },
   itineraryDays: {
     fontSize: 14,
-    color: '#007AFF',
+    color: Colors.primary,
     fontWeight: '500',
   },
   itineraryPax: {
     fontSize: 14,
-    color: '#34C759',
+    color: Colors.status.success,
     fontWeight: '500',
   },
   itinerarySection: {
@@ -1019,12 +1145,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#000',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
   sectionText: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
     lineHeight: 20,
   },
   costContainer: {
@@ -1034,36 +1160,37 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#E5E5EA',
+    borderTopColor: Colors.border,
   },
   costLabel: {
     fontSize: 12,
-    color: '#8E8E93',
+    color: Colors.text.tertiary,
     marginBottom: 4,
   },
   costUSD: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000',
+    color: Colors.text.primary,
   },
   costINR: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
     marginTop: 2,
   },
   copyButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#34C759',
+    backgroundColor: Colors.status.success,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
+    ...Layout.shadows.sm,
   },
   copyButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#fff',
+    color: Colors.text.inverse,
   },
   destinationContainer: {
     marginBottom: 12,
@@ -1071,33 +1198,112 @@ const styles = StyleSheet.create({
   destinationTag: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F2F2F7',
+    borderRadius: Layout.radius.full,
+    backgroundColor: Colors.background,
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#E5E5EA',
+    borderColor: Colors.border,
   },
   destinationTagActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   destinationTagText: {
     fontSize: 14,
-    color: '#333',
+    color: Colors.text.primary,
     fontWeight: '500',
   },
   destinationTagTextActive: {
-    color: '#fff',
+    color: Colors.text.inverse,
   },
   transportModeSeparator: {
     height: 1,
-    backgroundColor: '#E5E5EA',
+    backgroundColor: Colors.border,
     marginVertical: 16,
   },
   transportModeTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#007AFF',
+    color: Colors.primary,
     marginBottom: 12,
+  },
+  loader: {
+    marginTop: 20,
+  },
+  formHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  selectExistingButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary + '15',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 6,
+  },
+  selectExistingButtonText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  selectionModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: '80%',
+    padding: 20,
+  },
+  selectionModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text.primary,
+  },
+  modalSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+    height: 48,
+  },
+  modalSearchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 16,
+    color: Colors.text.primary,
+  },
+  selectionList: {
+    flex: 1,
+  },
+  selectionItem: {
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  selectionItemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  selectionItemSubtitle: {
+    fontSize: 14,
+    color: Colors.text.secondary,
   },
 });

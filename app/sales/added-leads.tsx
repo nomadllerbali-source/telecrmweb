@@ -17,9 +17,10 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Lead, Destination, Itinerary } from '@/types';
-import { ArrowLeft, Phone, MessageCircle, X, Calendar, Users, MapPin, DollarSign, ChevronDown, Filter, Search } from 'lucide-react-native';
+import { ArrowLeft, Phone, MessageCircle, X, Calendar, Users, MapPin, DollarSign, ChevronDown, Filter, Search, UserX } from 'lucide-react-native';
 import DateTimePickerComponent from '@/components/DateTimePicker';
 import { calendarService } from '@/services/calendar';
+import { Colors, Layout } from '@/constants/Colors';
 
 export default function AddedLeadsScreen() {
   const { user } = useAuth();
@@ -28,6 +29,7 @@ export default function AddedLeadsScreen() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [currentLead, setCurrentLead] = useState<Lead | null>(null);
+  const [showItineraryPicker, setShowItineraryPicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [clientName, setClientName] = useState('');
@@ -37,6 +39,7 @@ export default function AddedLeadsScreen() {
   const [place, setPlace] = useState('');
   const [budget, setBudget] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [exchangeRate, setExchangeRate] = useState(83);
 
   const [actionType, setActionType] = useState('');
   const [showActionPicker, setShowActionPicker] = useState(false);
@@ -55,7 +58,6 @@ export default function AddedLeadsScreen() {
   const [availableItineraries, setAvailableItineraries] = useState<Itinerary[]>([]);
   const [filteredItineraries, setFilteredItineraries] = useState<Itinerary[]>([]);
   const [selectedItinerary, setSelectedItinerary] = useState<Itinerary | null>(null);
-  const [showItineraryPicker, setShowItineraryPicker] = useState(false);
   const [loadingItineraries, setLoadingItineraries] = useState(false);
 
   const [destinations, setDestinations] = useState<Destination[]>([]);
@@ -101,6 +103,7 @@ export default function AddedLeadsScreen() {
   useEffect(() => {
     fetchLeads();
     fetchDestinations();
+    fetchExchangeRate();
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
 
@@ -109,13 +112,37 @@ export default function AddedLeadsScreen() {
     };
   }, []);
 
-  const handleAppStateChange = (nextAppState: AppStateStatus) => {
+  const handleAppStateChange = async (nextAppState: AppStateStatus) => {
     if (
       appState.current.match(/inactive|background/) &&
       nextAppState === 'active' &&
       callInitiatedRef.current &&
       leadForCallRef.current
     ) {
+      const startTime = (leadForCallRef as any).current?.callStartTime;
+      const endTime = new Date();
+
+      // Calculate duration in seconds
+      const duration = startTime
+        ? Math.floor((endTime.getTime() - startTime.getTime()) / 1000)
+        : 0;
+
+      if (duration > 0 && user?.id) {
+        try {
+          await supabase.from('call_logs').insert([
+            {
+              lead_id: leadForCallRef.current.id,
+              sales_person_id: user.id,
+              call_start_time: startTime.toISOString(),
+              call_end_time: endTime.toISOString(),
+              call_duration: duration,
+            },
+          ]);
+        } catch (error) {
+          console.error('Error logging call:', error);
+        }
+      }
+
       setCurrentLead(leadForCallRef.current);
       resetForm();
       setShowUpdateModal(true);
@@ -158,6 +185,18 @@ export default function AddedLeadsScreen() {
       console.error('Error fetching destinations:', err);
     } finally {
       setLoadingDestinations(false);
+    }
+  };
+
+  const fetchExchangeRate = async () => {
+    try {
+      const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+      const data = await response.json();
+      if (data.rates && data.rates.INR) {
+        setExchangeRate(data.rates.INR);
+      }
+    } catch (error) {
+      console.error('Error fetching exchange rate:', error);
     }
   };
 
@@ -209,7 +248,7 @@ export default function AddedLeadsScreen() {
 
   useEffect(() => {
     applyItineraryFilters();
-  }, [filterPax, filterDays, filterTransportMode, itinerarySearchText, availableItineraries]);
+  }, [filterPax, filterDays, filterTransportMode, itinerarySearchText, availableItineraries, selectedItinerary]);
 
   const applyItineraryFilters = () => {
     let filtered = [...availableItineraries];
@@ -236,6 +275,11 @@ export default function AddedLeadsScreen() {
     }
 
     setFilteredItineraries(filtered);
+
+    // If currently selected itinerary is filtered out, clear the selection
+    if (selectedItinerary && !filtered.find((it) => it.id === selectedItinerary.id)) {
+      setSelectedItinerary(null);
+    }
   };
 
   const handleDestinationChange = (destination: Destination) => {
@@ -258,6 +302,10 @@ export default function AddedLeadsScreen() {
   const handleCall = (phoneNumber: string, lead: Lead) => {
     callInitiatedRef.current = true;
     leadForCallRef.current = lead;
+    // Store call start time
+    // We'll use a ref for start time to persist it without re-renders affecting logic
+    (leadForCallRef as any).current.callStartTime = new Date();
+
     const url = `tel:${phoneNumber}`;
     Linking.openURL(url).catch((err) => {
       console.error('Error opening dialer:', err);
@@ -275,6 +323,26 @@ export default function AddedLeadsScreen() {
     });
   };
 
+  const handleMarkNoResponse = async (leadId: string) => {
+    try {
+      // Optimistic update - remove from list immediately
+      setLeads((currentLeads) => currentLeads.filter((l) => l.id !== leadId));
+
+      const { error } = await supabase
+        .from('leads')
+        .update({ status: 'no_response' })
+        .eq('id', leadId);
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error updating status:', error);
+      Alert.alert('Error', 'Failed to update status');
+      fetchLeads(); // Restore list on error
+    }
+  };
+
   const handleWhatsAppWithItinerary = () => {
     if (!currentLead?.contact_number || !selectedItinerary) {
       Alert.alert('Error', 'Please select an itinerary and ensure contact number exists');
@@ -282,8 +350,8 @@ export default function AddedLeadsScreen() {
     }
 
     const cleanNumber = currentLead.contact_number.replace(/[^\d+]/g, '');
-    const usdRate = 84;
-    const costINR = selectedItinerary.cost_inr || selectedItinerary.cost_usd * usdRate;
+    const finalRate = exchangeRate + 2;
+    const costINR = selectedItinerary.cost_inr || selectedItinerary.cost_usd * finalRate;
 
     const message = `Hi ${clientName || 'there'}! 👋
 
@@ -440,17 +508,6 @@ ${selectedItinerary.important_notes ? `*Important Notes:*\n${selectedItinerary.i
         if (nextFollowUpError) throw nextFollowUpError;
       }
 
-      const { error: callLogError } = await supabase
-        .from('call_logs')
-        .insert({
-          lead_id: currentLead.id,
-          sales_person_id: user?.id,
-          call_start_time: new Date().toISOString(),
-          call_duration: 0,
-        });
-
-      if (callLogError) throw callLogError;
-
       const actionTypeLabel = getActionTypeLabel(actionType);
       await supabase.from('notifications').insert({
         user_id: currentLead.assigned_by || user?.id,
@@ -543,7 +600,7 @@ This is a 7-day advance reminder for the travel date.`;
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#14b8a6" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -552,7 +609,7 @@ This is a 7-day advance reminder for the travel date.`;
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#333" />
+          <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Added Leads</Text>
         <View style={styles.placeholder} />
@@ -561,7 +618,7 @@ This is a 7-day advance reminder for the travel date.`;
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {leads.length === 0 ? (
           <View style={styles.emptyState}>
-            <Phone size={64} color="#ccc" />
+            <Phone size={64} color={Colors.text.tertiary} />
             <Text style={styles.emptyTitle}>No Added Leads Yet</Text>
             <Text style={styles.emptyText}>
               Start adding leads with their contact numbers to begin your outreach
@@ -572,7 +629,7 @@ This is a 7-day advance reminder for the travel date.`;
             <View key={lead.id} style={styles.leadCard}>
               <View style={styles.leadHeader}>
                 <View style={styles.phoneContainer}>
-                  <Phone size={20} color="#14b8a6" />
+                  <Phone size={20} color={Colors.primary} />
                   <Text style={styles.phoneNumber}>{lead.contact_number}</Text>
                 </View>
                 <Text style={styles.timestamp}>{formatDate(lead.created_at)}</Text>
@@ -583,7 +640,7 @@ This is a 7-day advance reminder for the travel date.`;
                   style={[styles.actionButton, styles.callButton]}
                   onPress={() => handleCall(lead.contact_number!, lead)}
                 >
-                  <Phone size={20} color="#fff" />
+                  <Phone size={20} color={Colors.text.inverse} />
                   <Text style={styles.actionButtonText}>Call</Text>
                 </TouchableOpacity>
 
@@ -591,8 +648,16 @@ This is a 7-day advance reminder for the travel date.`;
                   style={[styles.actionButton, styles.whatsappButton]}
                   onPress={() => handleWhatsApp(lead.contact_number!)}
                 >
-                  <MessageCircle size={20} color="#fff" />
+                  <MessageCircle size={20} color={Colors.text.inverse} />
                   <Text style={styles.actionButtonText}>WhatsApp</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.noResponseButton]}
+                  onPress={() => handleMarkNoResponse(lead.id)}
+                >
+                  <UserX size={20} color={Colors.text.inverse} />
+                  <Text style={styles.actionButtonText}>No Response</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -610,7 +675,7 @@ This is a 7-day advance reminder for the travel date.`;
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Update Lead Profile</Text>
             <TouchableOpacity onPress={() => setShowUpdateModal(false)}>
-              <X size={24} color="#333" />
+              <X size={24} color={Colors.text.primary} />
             </TouchableOpacity>
           </View>
 
@@ -660,7 +725,7 @@ This is a 7-day advance reminder for the travel date.`;
               <Text style={styles.label}>Destination Place *</Text>
               {loadingDestinations ? (
                 <View style={[styles.pickerButton, styles.loadingPicker]}>
-                  <ActivityIndicator size="small" color="#14b8a6" />
+                  <ActivityIndicator size="small" color={Colors.primary} />
                   <Text style={styles.pickerButtonText}>Loading destinations...</Text>
                 </View>
               ) : (
@@ -672,7 +737,7 @@ This is a 7-day advance reminder for the travel date.`;
                     <Text style={[styles.pickerButtonText, !selectedDestination && styles.placeholderText]}>
                       {selectedDestination ? selectedDestination.name : 'Select a destination'}
                     </Text>
-                    <ChevronDown size={20} color="#666" />
+                    <ChevronDown size={20} color={Colors.text.secondary} />
                   </TouchableOpacity>
                   {showDestinationPicker && (
                     <View style={styles.pickerOptions}>
@@ -694,159 +759,47 @@ This is a 7-day advance reminder for the travel date.`;
             {showItinerarySection && (
               <View style={styles.itinerarySectionContainer}>
                 <View style={styles.itinerarySectionHeader}>
-                  <MapPin size={20} color="#14b8a6" />
+                  <MapPin size={20} color={Colors.primary} />
                   <Text style={styles.itinerarySectionTitle}>Select Itinerary (Optional)</Text>
                 </View>
                 <Text style={styles.itinerarySectionSubtitle}>
-                  Choose an itinerary to send via WhatsApp, or skip this step
+                  Choose an itinerary to send via WhatsApp
                 </Text>
 
-                <View style={styles.filtersContainer}>
-                  <Text style={styles.filtersLabel}>Filter Itineraries:</Text>
-
-                  <View style={styles.filterRow}>
-                    <View style={[styles.filterItem, styles.filterItemHalf]}>
-                      <Text style={styles.filterItemLabel}>Passengers</Text>
-                      <TextInput
-                        style={styles.filterInput}
-                        value={filterPax}
-                        onChangeText={setFilterPax}
-                        placeholder="Min pax"
-                        keyboardType="numeric"
-                      />
-                    </View>
-
-                    <View style={[styles.filterItem, styles.filterItemHalf]}>
-                      <Text style={styles.filterItemLabel}>Days</Text>
-                      <TextInput
-                        style={styles.filterInput}
-                        value={filterDays}
-                        onChangeText={setFilterDays}
-                        placeholder="No. of days"
-                        keyboardType="numeric"
-                      />
-                    </View>
-                  </View>
-
-                  <View style={styles.filterItem}>
-                    <Text style={styles.filterItemLabel}>Transport Mode</Text>
-                    <TouchableOpacity
-                      style={styles.filterInput}
-                      onPress={() => setShowTransportPicker(!showTransportPicker)}
-                    >
-                      <Text style={[styles.pickerButtonText, !filterTransportMode && styles.placeholderText]}>
-                        {filterTransportMode ? getTransportModeLabel(filterTransportMode) : 'All transport modes'}
-                      </Text>
-                      <ChevronDown size={16} color="#666" />
-                    </TouchableOpacity>
-                    {showTransportPicker && (
-                      <View style={styles.pickerOptions}>
-                        <TouchableOpacity
-                          style={styles.pickerOption}
-                          onPress={() => {
-                            setFilterTransportMode('');
-                            setShowTransportPicker(false);
-                          }}
-                        >
-                          <Text style={styles.pickerOptionText}>All transport modes</Text>
-                        </TouchableOpacity>
-                        {transportModes.map((mode) => (
-                          <TouchableOpacity
-                            key={mode.value}
-                            style={styles.pickerOption}
-                            onPress={() => {
-                              setFilterTransportMode(mode.value);
-                              setShowTransportPicker(false);
-                            }}
-                          >
-                            <Text style={styles.pickerOptionText}>{mode.label}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-
-                  <View style={styles.filterItem}>
-                    <Text style={styles.filterItemLabel}>Search by Name</Text>
-                    <View style={styles.searchInputContainer}>
-                      <Search size={18} color="#999" />
-                      <TextInput
-                        style={styles.searchInput}
-                        value={itinerarySearchText}
-                        onChangeText={setItinerarySearchText}
-                        placeholder="Search itineraries..."
-                      />
-                    </View>
-                  </View>
-                </View>
-
-                {loadingItineraries ? (
-                  <View style={styles.loadingItinerariesContainer}>
-                    <ActivityIndicator size="small" color="#14b8a6" />
-                    <Text style={styles.loadingItinerariesText}>Loading itineraries...</Text>
-                  </View>
-                ) : filteredItineraries.length > 0 ? (
-                  <>
-                    <View style={styles.formGroup}>
-                      <Text style={styles.label}>Choose Itinerary</Text>
-                      <TouchableOpacity
-                        style={styles.pickerButton}
-                        onPress={() => setShowItineraryPicker(!showItineraryPicker)}
-                      >
-                        <Text style={[styles.pickerButtonText, !selectedItinerary && styles.placeholderText]}>
-                          {selectedItinerary ? selectedItinerary.name : `Select from ${filteredItineraries.length} itineraries`}
-                        </Text>
-                        <ChevronDown size={20} color="#666" />
-                      </TouchableOpacity>
-                      {showItineraryPicker && (
-                        <ScrollView style={styles.pickerOptionsScrollable}>
-                          <View style={styles.pickerOptions}>
-                            {filteredItineraries.map((itinerary) => (
-                              <TouchableOpacity
-                                key={itinerary.id}
-                                style={styles.pickerOption}
-                                onPress={() => {
-                                  setSelectedItinerary(itinerary);
-                                  setShowItineraryPicker(false);
-                                }}
-                              >
-                                <View style={styles.itineraryOptionContent}>
-                                  <Text style={styles.pickerOptionText}>{itinerary.name}</Text>
-                                  <Text style={styles.itinerarySubtext}>
-                                    {itinerary.days} days • {itinerary.no_of_pax} pax • {getTransportModeLabel(itinerary.mode_of_transport)}
-                                  </Text>
-                                  <Text style={styles.itineraryCost}>
-                                    ${itinerary.cost_usd} USD • ₹{itinerary.cost_inr || itinerary.cost_usd * 84} INR
-                                  </Text>
-                                </View>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        </ScrollView>
-                      )}
-                    </View>
-
-                    {selectedItinerary && (
-                      <TouchableOpacity
-                        style={styles.whatsappItineraryButton}
-                        onPress={handleWhatsAppWithItinerary}
-                      >
-                        <MessageCircle size={20} color="#fff" />
-                        <Text style={styles.whatsappItineraryButtonText}>Send Itinerary via WhatsApp</Text>
-                      </TouchableOpacity>
-                    )}
-                  </>
-                ) : (
-                  <Text style={styles.noItinerariesText}>
-                    No itineraries match your filters. Try adjusting your search.
+                <TouchableOpacity
+                  style={styles.pickerButton}
+                  onPress={() => setShowItineraryPicker(true)}
+                >
+                  <Text style={[styles.pickerButtonText, !selectedItinerary && styles.placeholderText]}>
+                    {selectedItinerary ? selectedItinerary.name : 'Choose Itinerary'}
                   </Text>
+                  <ChevronDown size={20} color={Colors.text.secondary} />
+                </TouchableOpacity>
+
+                {selectedItinerary && (
+                  <View style={{ marginTop: 12 }}>
+                    <Text style={styles.itinerarySubtext}>
+                      {selectedItinerary.days} days • {selectedItinerary.no_of_pax} pax • {getTransportModeLabel(selectedItinerary.mode_of_transport)}
+                    </Text>
+                    <Text style={styles.itineraryCost}>
+                      ${selectedItinerary.cost_usd} USD
+                    </Text>
+
+                    <TouchableOpacity
+                      style={styles.whatsappItineraryButton}
+                      onPress={handleWhatsAppWithItinerary}
+                    >
+                      <MessageCircle size={20} color="#fff" />
+                      <Text style={styles.whatsappItineraryButtonText}>Send Itinerary via WhatsApp</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
 
                 <TouchableOpacity
                   style={styles.skipItineraryButton}
                   onPress={() => setShowItinerarySection(false)}
                 >
-                  <Text style={styles.skipItineraryButtonText}>Skip Itinerary Selection</Text>
+                  <Text style={styles.skipItineraryButtonText}>Hide Itinerary Selection</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -888,7 +841,7 @@ This is a 7-day advance reminder for the travel date.`;
                 <Text style={[styles.pickerButtonText, !actionType && styles.placeholderText]}>
                   {actionType ? getActionTypeLabel(actionType) : 'Select action type'}
                 </Text>
-                <ChevronDown size={20} color="#666" />
+                <ChevronDown size={20} color={Colors.text.secondary} />
               </TouchableOpacity>
               {showActionPicker && (
                 <View style={styles.pickerOptions}>
@@ -1015,7 +968,7 @@ This is a 7-day advance reminder for the travel date.`;
                   <Text style={[styles.pickerButtonText, !deadReason && styles.placeholderText]}>
                     {deadReason || 'Select reason'}
                   </Text>
-                  <ChevronDown size={20} color="#666" />
+                  <ChevronDown size={20} color={Colors.text.secondary} />
                 </TouchableOpacity>
                 {showDeadReasonPicker && (
                   <View style={styles.pickerOptions}>
@@ -1055,13 +1008,89 @@ This is a 7-day advance reminder for the travel date.`;
                 disabled={saving}
               >
                 {saving ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={Colors.text.inverse} />
                 ) : (
                   <Text style={styles.modalButtonText}>Save & Add Follow-Up</Text>
                 )}
               </TouchableOpacity>
             </View>
           </ScrollView>
+        </View>
+      </Modal>
+      <Modal
+        visible={showItineraryPicker}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setShowItineraryPicker(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Choose Itinerary</Text>
+            <TouchableOpacity onPress={() => setShowItineraryPicker(false)}>
+              <X size={24} color={Colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+            <Text style={styles.filtersLabel}>Filters</Text>
+            <View style={styles.filterRow}>
+              <View style={[styles.filterItem, styles.filterItemHalf]}>
+                <TextInput
+                  style={styles.filterInput}
+                  value={filterPax} onChangeText={setFilterPax}
+                  placeholder="Min Pax" keyboardType="numeric"
+                />
+              </View>
+              <View style={[styles.filterItem, styles.filterItemHalf]}>
+                <TextInput
+                  style={styles.filterInput}
+                  value={filterDays} onChangeText={setFilterDays}
+                  placeholder="Days" keyboardType="numeric"
+                />
+              </View>
+            </View>
+            <View style={styles.searchInputContainer}>
+              <Search size={18} color={Colors.text.tertiary} />
+              <TextInput
+                style={styles.searchInput}
+                value={itinerarySearchText} onChangeText={setItinerarySearchText}
+                placeholder="Search by name..."
+              />
+            </View>
+          </View>
+
+          {loadingItineraries ? (
+            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 20 }} />
+          ) : (
+            <ScrollView style={styles.content}>
+              {filteredItineraries.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyText}>No itineraries found</Text>
+                </View>
+              ) : (
+                filteredItineraries.map(itinerary => (
+                  <TouchableOpacity
+                    key={itinerary.id}
+                    style={[styles.pickerOption, { paddingVertical: 16 }]}
+                    onPress={() => {
+                      setSelectedItinerary(itinerary);
+                      setShowItineraryPicker(false);
+                    }}
+                  >
+                    <View style={styles.itineraryOptionContent}>
+                      <Text style={styles.pickerOptionText}>{itinerary.name}</Text>
+                      <Text style={styles.itinerarySubtext}>
+                        {itinerary.days} days • {itinerary.no_of_pax} pax • {getTransportModeLabel(itinerary.mode_of_transport)}
+                      </Text>
+                      <Text style={styles.itineraryCost}>
+                        ${itinerary.cost_usd} USD
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+          )}
         </View>
       </Modal>
     </View>
@@ -1071,31 +1100,34 @@ This is a 7-day advance reminder for the travel date.`;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 20,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+    ...Layout.shadows.sm,
   },
   backButton: {
     padding: 8,
+    borderRadius: Layout.radius.full,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   placeholder: {
     width: 40,
@@ -1104,7 +1136,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   emptyState: {
     alignItems: 'center',
@@ -1113,27 +1145,23 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: '700',
+    color: Colors.text.primary,
     marginTop: 16,
     marginBottom: 8,
   },
   emptyText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 15,
+    color: Colors.text.secondary,
     textAlign: 'center',
     paddingHorizontal: 40,
   },
   leadCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Layout.shadows.sm,
   },
   leadHeader: {
     marginBottom: 16,
@@ -1141,63 +1169,67 @@ const styles = StyleSheet.create({
   phoneContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
+    gap: 12,
+    marginBottom: 6,
   },
   phoneNumber: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   timestamp: {
-    fontSize: 12,
-    color: '#999',
+    fontSize: 13,
+    color: Colors.text.tertiary,
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 12,
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
   },
   actionButton: {
-    flex: 1,
+    flexGrow: 1,
+    minWidth: '30%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     gap: 8,
   },
   callButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: Colors.status.success,
   },
   whatsappButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: Colors.primary,
   },
   actionButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 14,
     fontWeight: '600',
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.background,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: Layout.spacing.lg,
     paddingTop: 60,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+    backgroundColor: Colors.surface,
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   modalContent: {
     flex: 1,
-    padding: 20,
+    padding: Layout.spacing.lg,
   },
   formGroup: {
     marginBottom: 20,
@@ -1212,18 +1244,18 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: Colors.text.secondary,
     marginBottom: 8,
   },
   input: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    backgroundColor: Colors.surface,
     fontSize: 16,
-    color: '#333',
+    color: Colors.text.primary,
   },
   textArea: {
     height: 100,
@@ -1236,14 +1268,15 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     paddingVertical: 16,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     alignItems: 'center',
+    ...Layout.shadows.md,
   },
   confirmButton: {
-    backgroundColor: '#14b8a6',
+    backgroundColor: Colors.primary,
   },
   modalButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -1251,63 +1284,59 @@ const styles = StyleSheet.create({
     marginTop: 24,
     marginBottom: 20,
     paddingTop: 24,
-    borderTopWidth: 2,
-    borderTopColor: '#e5e5e5',
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
   sectionSubtitle: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   pickerButton: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    backgroundColor: Colors.surface,
   },
   pickerButtonText: {
     fontSize: 16,
-    color: '#333',
+    color: Colors.text.primary,
   },
   placeholderText: {
-    color: '#999',
+    color: Colors.text.tertiary,
   },
   pickerOptions: {
     marginTop: 8,
-    backgroundColor: '#fff',
-    borderRadius: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
     borderWidth: 1,
-    borderColor: '#ddd',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderColor: Colors.border,
+    ...Layout.shadows.md,
   },
   pickerOption: {
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: Colors.border,
   },
   pickerOptionText: {
     fontSize: 16,
-    color: '#333',
+    color: Colors.text.primary,
   },
   dueAmountText: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#14b8a6',
+    fontWeight: '700',
+    color: Colors.status.error,
     paddingVertical: 12,
   },
   loadingPicker: {
@@ -1315,7 +1344,7 @@ const styles = StyleSheet.create({
   },
   noItinerariesText: {
     fontSize: 14,
-    color: '#999',
+    color: Colors.text.tertiary,
     paddingVertical: 12,
     fontStyle: 'italic',
   },
@@ -1323,50 +1352,52 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   itinerarySubtext: {
-    fontSize: 12,
-    color: '#999',
+    fontSize: 13,
+    color: Colors.text.secondary,
     marginTop: 4,
   },
   itineraryCost: {
-    fontSize: 12,
-    color: '#14b8a6',
+    fontSize: 13,
+    color: Colors.primary,
     fontWeight: '600',
     marginTop: 4,
   },
   itinerarySectionContainer: {
-    backgroundColor: '#f0fdfa',
-    borderRadius: 12,
+    backgroundColor: Colors.surfaceHighlight,
+    borderRadius: Layout.radius.xl,
     padding: 16,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#99f6e4',
+    borderColor: Colors.border,
   },
   itinerarySectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   itinerarySectionTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#0f766e',
+    fontWeight: '700',
+    color: Colors.primary,
   },
   itinerarySectionSubtitle: {
     fontSize: 13,
-    color: '#5eead4',
+    color: Colors.text.secondary,
     marginBottom: 16,
   },
   filtersContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
     padding: 12,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   filtersLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#333',
+    color: Colors.text.secondary,
     marginBottom: 12,
   },
   filterRow: {
@@ -1383,18 +1414,18 @@ const styles = StyleSheet.create({
   filterItemLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#666',
+    color: Colors.text.secondary,
     marginBottom: 6,
   },
   filterInput: {
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
-    backgroundColor: '#f9f9f9',
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.md,
+    backgroundColor: Colors.background,
     fontSize: 14,
-    color: '#333',
+    color: Colors.text.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1405,15 +1436,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
-    backgroundColor: '#f9f9f9',
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.md,
+    backgroundColor: Colors.background,
     gap: 8,
   },
   searchInput: {
     flex: 1,
     fontSize: 14,
-    color: '#333',
+    color: Colors.text.primary,
   },
   loadingItinerariesContainer: {
     flexDirection: 'row',
@@ -1424,7 +1455,7 @@ const styles = StyleSheet.create({
   },
   loadingItinerariesText: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   pickerOptionsScrollable: {
     maxHeight: 200,
@@ -1433,14 +1464,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#25D366',
+    backgroundColor: '#25D366', // Keep WA brand color
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     gap: 8,
     marginTop: 12,
+    ...Layout.shadows.sm,
   },
   whatsappItineraryButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 15,
     fontWeight: '600',
   },
@@ -1451,7 +1483,10 @@ const styles = StyleSheet.create({
   },
   skipItineraryButtonText: {
     fontSize: 14,
-    color: '#14b8a6',
+    color: Colors.text.tertiary,
     fontWeight: '600',
+  },
+  noResponseButton: {
+    backgroundColor: '#FF3B30', // Red for negative action
   },
 });

@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { ArrowLeft, Trash2, Bell } from 'lucide-react-native';
+import { Colors, Layout } from '@/constants/Colors';
 
 interface NotificationPreferences {
   id: string;
@@ -109,7 +110,7 @@ export default function SettingsScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -119,7 +120,7 @@ export default function SettingsScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <ArrowLeft size={24} color="#1a1a1a" />
+            <ArrowLeft size={24} color={Colors.text.primary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Settings</Text>
           <View style={{ width: 24 }} />
@@ -135,7 +136,7 @@ export default function SettingsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#1a1a1a" />
+          <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notification Settings</Text>
         <View style={{ width: 24 }} />
@@ -147,7 +148,7 @@ export default function SettingsScreen() {
 
           <View style={styles.preferenceItem}>
             <View style={styles.preferenceLabel}>
-              <Bell size={20} color="#3b82f6" />
+              <Bell size={20} color={Colors.primary} />
               <View style={styles.labelText}>
                 <Text style={styles.labelTitle}>Enable Notifications</Text>
                 <Text style={styles.labelDescription}>Receive lead assignment alerts</Text>
@@ -157,14 +158,14 @@ export default function SettingsScreen() {
               value={prefs.notifications_enabled}
               onValueChange={(value) => updatePreference('notifications_enabled', value)}
               disabled={saving}
-              trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-              thumbColor={prefs.notifications_enabled ? '#3b82f6' : '#f3f4f6'}
+              trackColor={{ false: Colors.text.tertiary, true: Colors.primary + '80' }}
+              thumbColor={prefs.notifications_enabled ? Colors.primary : '#f3f4f6'}
             />
           </View>
 
           <View style={styles.preferenceItem}>
             <View style={styles.preferenceLabel}>
-              <Bell size={20} color="#3b82f6" />
+              <Bell size={20} color={Colors.primary} />
               <View style={styles.labelText}>
                 <Text style={styles.labelTitle}>Sound Alerts</Text>
                 <Text style={styles.labelDescription}>Play sound for incoming notifications</Text>
@@ -174,14 +175,14 @@ export default function SettingsScreen() {
               value={prefs.sound_enabled}
               onValueChange={(value) => updatePreference('sound_enabled', value)}
               disabled={saving || !prefs.notifications_enabled}
-              trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-              thumbColor={prefs.sound_enabled ? '#3b82f6' : '#f3f4f6'}
+              trackColor={{ false: Colors.text.tertiary, true: Colors.primary + '80' }}
+              thumbColor={prefs.sound_enabled ? Colors.primary : '#f3f4f6'}
             />
           </View>
 
           <View style={styles.preferenceItem}>
             <View style={styles.preferenceLabel}>
-              <Bell size={20} color="#3b82f6" />
+              <Bell size={20} color={Colors.primary} />
               <View style={styles.labelText}>
                 <Text style={styles.labelTitle}>Vibration Alerts</Text>
                 <Text style={styles.labelDescription}>Haptic feedback on notifications</Text>
@@ -191,8 +192,8 @@ export default function SettingsScreen() {
               value={prefs.vibration_enabled}
               onValueChange={(value) => updatePreference('vibration_enabled', value)}
               disabled={saving || !prefs.notifications_enabled}
-              trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-              thumbColor={prefs.vibration_enabled ? '#3b82f6' : '#f3f4f6'}
+              trackColor={{ false: Colors.text.tertiary, true: Colors.primary + '80' }}
+              thumbColor={prefs.vibration_enabled ? Colors.primary : '#f3f4f6'}
             />
           </View>
         </View>
@@ -202,7 +203,7 @@ export default function SettingsScreen() {
 
           <View style={styles.preferenceItem}>
             <View style={styles.preferenceLabel}>
-              <Bell size={20} color="#3b82f6" />
+              <Bell size={20} color={Colors.primary} />
               <View style={styles.labelText}>
                 <Text style={styles.labelTitle}>Enable Do Not Disturb</Text>
                 <Text style={styles.labelDescription}>Silence notifications during set hours</Text>
@@ -212,8 +213,8 @@ export default function SettingsScreen() {
               value={prefs.do_not_disturb_enabled}
               onValueChange={(value) => updatePreference('do_not_disturb_enabled', value)}
               disabled={saving}
-              trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-              thumbColor={prefs.do_not_disturb_enabled ? '#3b82f6' : '#f3f4f6'}
+              trackColor={{ false: Colors.text.tertiary, true: Colors.primary + '80' }}
+              thumbColor={prefs.do_not_disturb_enabled ? Colors.primary : '#f3f4f6'}
             />
           </View>
 
@@ -227,7 +228,7 @@ export default function SettingsScreen() {
                     value={prefs.do_not_disturb_start}
                     onChangeText={(value) => updatePreference('do_not_disturb_start', value)}
                     placeholder="22:00"
-                    placeholderTextColor="#ccc"
+                    placeholderTextColor={Colors.text.tertiary}
                   />
                 </View>
                 <View style={styles.timeInputGroup}>
@@ -237,7 +238,7 @@ export default function SettingsScreen() {
                     value={prefs.do_not_disturb_end}
                     onChangeText={(value) => updatePreference('do_not_disturb_end', value)}
                     placeholder="08:00"
-                    placeholderTextColor="#ccc"
+                    placeholderTextColor={Colors.text.tertiary}
                   />
                 </View>
               </View>
@@ -287,7 +288,7 @@ export default function SettingsScreen() {
             onPress={clearAllNotifications}
             disabled={saving}
           >
-            <Trash2 size={20} color="#dc2626" />
+            <Trash2 size={20} color={Colors.status.error} />
             <Text style={styles.dangerButtonText}>Clear All Notifications</Text>
           </TouchableOpacity>
           <Text style={styles.dangerDescription}>This action cannot be undone.</Text>
@@ -300,13 +301,13 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   errorContainer: {
     flex: 1,
@@ -315,42 +316,46 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 16,
-    color: '#dc2626',
+    color: Colors.status.error,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+    ...Layout.shadows.sm,
   },
   backButton: {
     padding: 4,
+    borderRadius: Layout.radius.full,
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   section: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
     marginBottom: 16,
+    ...Layout.shadows.sm,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
     marginBottom: 16,
   },
   preferenceItem: {
@@ -359,7 +364,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: Colors.border,
   },
   preferenceLabel: {
     flex: 1,
@@ -373,12 +378,12 @@ const styles = StyleSheet.create({
   labelTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     marginBottom: 2,
   },
   labelDescription: {
     fontSize: 13,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   timeInputContainer: {
     flexDirection: 'row',
@@ -391,27 +396,28 @@ const styles = StyleSheet.create({
   timeInputLabel: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     marginBottom: 6,
   },
   timeInput: {
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     paddingVertical: 10,
     paddingHorizontal: 12,
     fontSize: 14,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     fontFamily: 'monospace',
+    backgroundColor: Colors.background,
   },
   timeHelperText: {
     fontSize: 12,
-    color: '#999',
+    color: Colors.text.tertiary,
     marginTop: 8,
   },
   filterDescription: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
     marginBottom: 12,
     lineHeight: 20,
   },
@@ -421,23 +427,24 @@ const styles = StyleSheet.create({
   filterButton: {
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     borderWidth: 2,
-    borderColor: '#e5e5e5',
-    backgroundColor: '#f9f9f9',
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
   },
   filterButtonActive: {
-    borderColor: '#3b82f6',
-    backgroundColor: '#f0f7ff',
+    borderColor: Colors.primary,
+    backgroundColor: Colors.surfaceHighlight,
   },
   filterButtonText: {
     fontSize: 15,
     fontWeight: '500',
-    color: '#666',
+    color: Colors.text.secondary,
     textAlign: 'center',
   },
   filterButtonTextActive: {
-    color: '#3b82f6',
+    color: Colors.primary,
+    fontWeight: '600',
   },
   dangerButton: {
     flexDirection: 'row',
@@ -446,19 +453,19 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     borderWidth: 1,
-    borderColor: '#fecaca',
-    backgroundColor: '#fef2f2',
+    borderColor: Colors.status.error + '40', // 25% opacity
+    backgroundColor: Colors.status.error + '10', // 10% opacity
   },
   dangerButtonText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#dc2626',
+    color: Colors.status.error,
   },
   dangerDescription: {
     fontSize: 12,
-    color: '#dc2626',
+    color: Colors.status.error,
     marginTop: 8,
     textAlign: 'center',
   },

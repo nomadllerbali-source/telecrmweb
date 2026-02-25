@@ -1,10 +1,11 @@
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, LayoutAnimation, Image } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { loginUser } from '@/services/auth';
-import { Lock, User, Briefcase } from 'lucide-react-native';
+import { Lock, User, Briefcase, ChevronRight } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Colors, Layout } from '@/constants/Colors';
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
@@ -34,8 +35,8 @@ export default function LoginScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#2563eb" />
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -60,59 +61,76 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient colors={['#8b5cf6', '#3b82f6', '#10b981']} style={styles.gradient}>
+    <LinearGradient
+      colors={[Colors.primary, '#4338ca', '#312e81']} // Indigo gradient from Colors
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.gradient}
+    >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}
       >
         <View style={styles.card}>
-          <View style={styles.logoContainer}>
-            <View style={styles.logo}>
-              <Briefcase size={40} color="#8b5cf6" />
-            </View>
+          <View style={styles.headerContainer}>
+            <Text style={styles.appName}>Nomadller Solutions</Text>
+            <Text style={styles.tagline}>CRM & Sales Management</Text>
           </View>
-          <Text style={styles.title}>Nomadller Solutions</Text>
-          <Text style={styles.subtitle}>Travel Management System</Text>
+
+          <View style={styles.separator} />
+
+          <Text style={styles.welcomeText}>Welcome Back</Text>
 
           <View style={styles.inputContainer}>
-          <User size={20} color="#666" style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Username"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-            editable={!loading}
-          />
+            <User size={20} color={Colors.text.tertiary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Username"
+              placeholderTextColor={Colors.text.tertiary}
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+              editable={!loading}
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Lock size={20} color={Colors.text.tertiary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor={Colors.text.tertiary}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              editable={!loading}
+            />
+          </View>
+
+          {error ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color={Colors.text.inverse} />
+            ) : (
+              <View style={styles.buttonContent}>
+                <Text style={styles.buttonText}>Login</Text>
+                <ChevronRight size={20} color={Colors.text.inverse} />
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.inputContainer}>
-          <Lock size={20} color="#666" style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            editable={!loading}
-          />
-        </View>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Login</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+        <Text style={styles.copyright}>© 2024 Nomadller Solutions</Text>
+      </KeyboardAvoidingView>
     </LinearGradient>
   );
 }
@@ -125,95 +143,149 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: Layout.spacing.xl,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
   },
   card: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    paddingHorizontal: 32,
+    paddingVertical: 40,
+    ...Layout.shadows.lg,
+    alignItems: 'center',
   },
   logoContainer: {
-    alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Layout.spacing.md,
   },
   logo: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    backgroundColor: '#f5f3ff',
+    width: 280,
+    height: 180,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#8b5cf6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
+    marginTop: -20,
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontSize: 28,
+    fontWeight: '800',
+    color: Colors.text.primary,
     textAlign: 'center',
-    marginBottom: 4,
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 24,
+    fontWeight: '300',
+    color: Colors.text.secondary,
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: Layout.spacing.lg,
+    marginTop: -4,
+  },
+  separator: {
+    width: 40,
+    height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+    marginBottom: Layout.spacing.xl,
+  },
+  welcomeText: {
+    fontSize: 16,
+    color: Colors.text.secondary,
+    marginBottom: Layout.spacing.lg,
+    fontWeight: '500',
+    alignSelf: 'flex-start',
+    width: '100%',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#e5e5e5',
-    borderRadius: 12,
-    marginBottom: 16,
-    paddingHorizontal: 16,
-    backgroundColor: '#fafafa',
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    marginBottom: Layout.spacing.md,
+    paddingHorizontal: Layout.spacing.md,
+    backgroundColor: Colors.background,
+    width: '100%',
+    height: 56,
   },
   inputIcon: {
     marginRight: 12,
   },
   input: {
     flex: 1,
-    height: 52,
+    height: '100%',
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
+    fontWeight: '500',
   },
-  button: {
-    backgroundColor: '#8b5cf6',
-    height: 52,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-    shadowColor: '#8b5cf6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  buttonDisabled: {
-    backgroundColor: '#c4b5fd',
-    shadowOpacity: 0.1,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  errorContainer: {
+    backgroundColor: '#fee2e2',
+    padding: 12,
+    borderRadius: Layout.radius.md,
+    marginBottom: Layout.spacing.md,
+    width: '100%',
   },
   errorText: {
     color: '#dc2626',
     fontSize: 14,
-    marginBottom: 12,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  button: {
+    backgroundColor: Colors.primary,
+    height: 56,
+    width: '100%',
+    borderRadius: Layout.radius.full,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: Layout.spacing.md,
+    ...Layout.shadows.lg,
+  },
+  buttonDisabled: {
+    backgroundColor: Colors.text.tertiary,
+    shadowOpacity: 0.1,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  buttonText: {
+    color: Colors.text.inverse,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  copyright: {
+    position: 'absolute',
+    bottom: 30,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 12,
+  },
+  headerContainer: {
+    alignItems: 'center',
+    marginBottom: Layout.spacing.lg,
+  },
+  appName: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: Colors.text.primary,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  tagline: {
+    fontSize: 16,
+    color: Colors.text.secondary,
     textAlign: 'center',
   },
 });
+

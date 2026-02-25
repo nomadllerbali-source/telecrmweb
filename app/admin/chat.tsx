@@ -4,7 +4,8 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { User, ChatMessage } from '@/types';
-import { ArrowLeft, Send, MessageCircle } from 'lucide-react-native';
+import { ArrowLeft, Send, MessageCircle, MoreVertical, Search, CheckCheck } from 'lucide-react-native';
+import { Colors, Layout } from '@/constants/Colors';
 
 export default function AdminChatScreen() {
   const { user } = useAuth();
@@ -41,6 +42,9 @@ export default function AdminChatScreen() {
 
       if (error) throw error;
       setSalesPersons(data || []);
+      if (data && data.length > 0 && !selectedSalesPerson) {
+        setSelectedSalesPerson(data[0].id);
+      }
     } catch (err: any) {
       console.error('Error fetching sales persons:', err);
     } finally {
@@ -138,10 +142,12 @@ export default function AdminChatScreen() {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const selectedPerson = salesPersons.find(p => p.id === selectedSalesPerson);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -150,42 +156,62 @@ export default function AdminChatScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#1a1a1a" />
+          <View style={styles.iconButton}>
+            <ArrowLeft size={24} color={Colors.text.primary} />
+          </View>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chat with Sales Team</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerInfo}>
+          <Text style={styles.headerTitle}>Team Chat</Text>
+          <View style={styles.statusRow}>
+            <View style={styles.statusDot} />
+            <Text style={styles.statusText}>Admin Center</Text>
+          </View>
+        </View>
+        <TouchableOpacity style={styles.iconButton}>
+          <MoreVertical size={20} color={Colors.text.secondary} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.mainContainer}>
-        <View style={styles.salesPersonsList}>
-          <Text style={styles.salesPersonsTitle}>Sales Persons</Text>
-          <ScrollView>
+        {/* Sidebar */}
+        <View style={styles.sidebar}>
+          <View style={styles.sidebarHeader}>
+            <View style={styles.sidebarSearch}>
+              <Search size={16} color={Colors.text.tertiary} />
+              <TextInput
+                placeholder="Search team..."
+                placeholderTextColor={Colors.text.tertiary}
+                style={styles.sidebarSearchInput}
+              />
+            </View>
+          </View>
+          <ScrollView style={styles.sidebarList}>
             {salesPersons.map((person) => (
               <TouchableOpacity
                 key={person.id}
                 style={[
-                  styles.salesPersonCard,
-                  selectedSalesPerson === person.id && styles.salesPersonCardActive,
+                  styles.personItem,
+                  selectedSalesPerson === person.id && styles.personItemActive,
                 ]}
                 onPress={() => setSelectedSalesPerson(person.id)}
               >
-                <View style={styles.salesPersonAvatar}>
-                  <MessageCircle size={20} color="#3b82f6" />
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{person.full_name?.charAt(0)}</Text>
+                  <View style={styles.onlineBadge} />
                 </View>
-                <View style={styles.salesPersonInfo}>
-                  <Text style={styles.salesPersonName}>{person.full_name}</Text>
-                  <Text style={styles.salesPersonEmail}>{person.email}</Text>
-                </View>
+                {selectedSalesPerson === person.id && <View style={styles.activeIndicator} />}
               </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
 
-        <View style={styles.chatContainer}>
+        {/* Chat Area */}
+        <View style={styles.chatArea}>
           {!selectedSalesPerson ? (
-            <View style={styles.emptyChat}>
-              <MessageCircle size={48} color="#ccc" />
-              <Text style={styles.emptyChatText}>Select a sales person to start chatting</Text>
+            <View style={styles.emptyState}>
+              <MessageCircle size={64} color={Colors.surfaceHighlight} />
+              <Text style={styles.emptyTitle}>Your Workspace</Text>
+              <Text style={styles.emptySubtitle}>Select a team member to start a secure conversation.</Text>
             </View>
           ) : (
             <KeyboardAvoidingView
@@ -193,63 +219,80 @@ export default function AdminChatScreen() {
               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
               keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
             >
+              <View style={styles.chatHeader}>
+                <View>
+                  <Text style={styles.chatWith}>{selectedPerson?.full_name}</Text>
+                  <Text style={styles.chatStatus}>Sales Executive</Text>
+                </View>
+              </View>
+
               <ScrollView
                 ref={scrollViewRef}
                 style={styles.messagesContainer}
                 contentContainerStyle={styles.messagesContent}
                 onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
               >
+                {messages.length === 0 ? (
+                  <View style={styles.firstMessageInfo}>
+                    <CheckCheck size={20} color={Colors.primary} />
+                    <Text style={styles.firstMessageText}>End-to-end encrypted chat</Text>
+                  </View>
+                ) : null}
                 {messages.map((message) => {
                   const isMe = message.sender_id === user?.id;
                   return (
                     <View
                       key={message.id}
                       style={[
-                        styles.messageContainer,
-                        isMe ? styles.myMessageContainer : styles.theirMessageContainer,
+                        styles.messageRow,
+                        isMe ? styles.myMessageRow : styles.theirMessageRow,
                       ]}
                     >
                       <View
                         style={[
-                          styles.messageBubble,
-                          isMe ? styles.myMessageBubble : styles.theirMessageBubble,
+                          styles.bubble,
+                          isMe ? styles.myBubble : styles.theirBubble,
                         ]}
                       >
                         <Text style={[styles.messageText, isMe && styles.myMessageText]}>
                           {message.message}
                         </Text>
-                        <Text style={[styles.messageTime, isMe && styles.myMessageTime]}>
-                          {formatTime(message.created_at)}
-                        </Text>
+                        <View style={styles.bubbleFooter}>
+                          <Text style={[styles.timeText, isMe && styles.myTimeText]}>
+                            {formatTime(message.created_at)}
+                          </Text>
+                          {isMe && <CheckCheck size={12} color={message.is_read ? Colors.primaryLight : Colors.text.tertiary} />}
+                        </View>
                       </View>
                     </View>
                   );
                 })}
               </ScrollView>
 
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  value={messageText}
-                  onChangeText={setMessageText}
-                  placeholder="Type a message..."
-                  multiline
-                  maxLength={500}
-                  returnKeyType="send"
-                  blurOnSubmit={false}
-                  editable={!sending}
-                />
-                <TouchableOpacity
-                  style={[styles.sendButton, (!messageText.trim() || sending) && styles.sendButtonDisabled]}
-                  onPress={sendMessage}
-                  disabled={!messageText.trim() || sending}
-                >
-                  {sending ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Send size={20} color="#fff" />
-                  )}
-                </TouchableOpacity>
+              <View style={styles.inputBar}>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={messageText}
+                    onChangeText={setMessageText}
+                    placeholder="Message..."
+                    placeholderTextColor={Colors.text.tertiary}
+                    multiline
+                    maxLength={500}
+                    editable={!sending}
+                  />
+                  <TouchableOpacity
+                    style={[styles.sendButton, !messageText.trim() && { opacity: 0.5 }]}
+                    onPress={sendMessage}
+                    disabled={!messageText.trim() || sending}
+                  >
+                    {sending ? (
+                      <ActivityIndicator size="small" color={Colors.text.inverse} />
+                    ) : (
+                      <Send size={18} color={Colors.text.inverse} />
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             </KeyboardAvoidingView>
           )}
@@ -262,172 +305,276 @@ export default function AdminChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
   },
   backButton: {
-    padding: 4,
+    marginLeft: -Layout.spacing.sm,
+  },
+  iconButton: {
+    padding: 8,
+    borderRadius: Layout.radius.full,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  headerInfo: {
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.status.success,
+  },
+  statusText: {
+    fontSize: 10,
+    color: Colors.text.tertiary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
   mainContainer: {
     flex: 1,
     flexDirection: 'row',
   },
-  salesPersonsList: {
-    width: '35%',
-    backgroundColor: '#fff',
+  sidebar: {
+    width: 80,
+    backgroundColor: Colors.surface,
     borderRightWidth: 1,
-    borderRightColor: '#e5e5e5',
+    borderRightColor: Colors.border,
   },
-  salesPersonsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
-  },
-  salesPersonCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  sidebarHeader: {
     padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    alignItems: 'center',
   },
-  salesPersonCardActive: {
-    backgroundColor: '#e0f2fe',
+  sidebarSearch: {
+    display: 'none', // Hide for now in compact sidebar
   },
-  salesPersonAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#e0f2fe',
+  sidebarList: {
+    flex: 1,
+  },
+  personItem: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  personItemActive: {
+    backgroundColor: Colors.surfaceHighlight,
+  },
+  activeIndicator: {
+    position: 'absolute',
+    left: 0,
+    top: '25%',
+    height: '50%',
+    width: 3,
+    backgroundColor: Colors.primary,
+    borderTopRightRadius: 4,
+    borderBottomRightRadius: 4,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: Colors.background,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  salesPersonInfo: {
+  avatarText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  onlineBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.status.success,
+    borderWidth: 2,
+    borderColor: Colors.surface,
+  },
+  chatArea: {
     flex: 1,
+    backgroundColor: Colors.background,
   },
-  salesPersonName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 2,
-  },
-  salesPersonEmail: {
-    fontSize: 12,
-    color: '#666',
-  },
-  chatContainer: {
-    flex: 1,
-  },
-  emptyChat: {
+  emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
   },
-  emptyChatText: {
-    fontSize: 16,
-    color: '#999',
-    marginTop: 16,
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginTop: 20,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: Colors.text.tertiary,
+    marginTop: 8,
     textAlign: 'center',
+    lineHeight: 20,
   },
   chatContent: {
     flex: 1,
+  },
+  chatHeader: {
+    padding: 16,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  chatWith: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text.primary,
+  },
+  chatStatus: {
+    fontSize: 12,
+    color: Colors.text.tertiary,
   },
   messagesContainer: {
     flex: 1,
   },
   messagesContent: {
-    padding: 16,
+    padding: 20,
+    gap: 16,
   },
-  messageContainer: {
-    marginBottom: 12,
+  firstMessageInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.surfaceHighlight,
+    padding: 10,
+    borderRadius: Layout.radius.md,
+    marginBottom: 20,
   },
-  myMessageContainer: {
-    alignItems: 'flex-end',
+  firstMessageText: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    fontWeight: '600',
   },
-  theirMessageContainer: {
-    alignItems: 'flex-start',
+  messageRow: {
+    flexDirection: 'row',
   },
-  messageBubble: {
-    maxWidth: '75%',
-    padding: 12,
-    borderRadius: 16,
+  myMessageRow: {
+    justifyContent: 'flex-end',
   },
-  myMessageBubble: {
-    backgroundColor: '#3b82f6',
+  theirMessageRow: {
+    justifyContent: 'flex-start',
+  },
+  bubble: {
+    maxWidth: '85%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    ...Layout.shadows.sm,
+  },
+  myBubble: {
+    backgroundColor: Colors.primary,
     borderBottomRightRadius: 4,
   },
-  theirMessageBubble: {
-    backgroundColor: '#fff',
+  theirBubble: {
+    backgroundColor: Colors.surface,
     borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   messageText: {
-    fontSize: 16,
-    color: '#1a1a1a',
-    marginBottom: 4,
+    fontSize: 15,
+    color: Colors.text.primary,
+    lineHeight: 22,
   },
   myMessageText: {
-    color: '#fff',
+    color: Colors.text.inverse,
   },
-  messageTime: {
-    fontSize: 11,
-    color: '#666',
+  bubbleFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+    marginTop: 4,
   },
-  myMessageTime: {
-    color: '#e0f2fe',
+  timeText: {
+    fontSize: 10,
+    color: Colors.text.tertiary,
+    fontWeight: '600',
   },
-  inputContainer: {
+  myTimeText: {
+    color: Colors.text.inverse + '80',
+  },
+  inputBar: {
+    padding: 20,
+    backgroundColor: Colors.background,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  inputWrapper: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: 12,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e5e5e5',
-    gap: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: 24,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   input: {
     flex: 1,
-    backgroundColor: '#f9fafb',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 16,
-    maxHeight: 100,
+    color: Colors.text.primary,
+    fontSize: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    maxHeight: 120,
   },
   sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#3b82f6',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 6,
   },
-  sendButtonDisabled: {
-    backgroundColor: '#93c5fd',
+  sidebarSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.text.primary,
+    marginLeft: 8,
+    height: '100%',
   },
 });

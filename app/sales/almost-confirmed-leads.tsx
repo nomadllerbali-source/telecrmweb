@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Lead } from '@/types';
 import { ArrowLeft, Calendar, Clock, Phone, MessageCircle, X, History } from 'lucide-react-native';
+import { Colors, Layout } from '@/constants/Colors';
 
 interface FollowUpWithLead {
   id: string;
@@ -152,7 +153,7 @@ export default function AlmostConfirmedLeadsScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#f59e0b" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -162,7 +163,7 @@ export default function AlmostConfirmedLeadsScreen() {
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <View style={styles.iconContainer}>
-            <ArrowLeft size={24} color="#1a1a1a" />
+            <ArrowLeft size={24} color={Colors.text.primary} />
           </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Almost Confirmed Leads</Text>
@@ -195,7 +196,7 @@ export default function AlmostConfirmedLeadsScreen() {
                     <View style={styles.dateTimeItem}>
                       <View style={styles.dateTimeContent}>
                         <View style={styles.iconContainer}>
-                          <Calendar size={14} color="#666" />
+                          <Calendar size={14} color={Colors.text.secondary} />
                         </View>
                         <Text style={styles.dateTimeText}>{date}</Text>
                       </View>
@@ -203,7 +204,7 @@ export default function AlmostConfirmedLeadsScreen() {
                     <View style={styles.dateTimeItem}>
                       <View style={styles.dateTimeContent}>
                         <View style={styles.iconContainer}>
-                          <Clock size={14} color="#666" />
+                          <Clock size={14} color={Colors.text.secondary} />
                         </View>
                         <Text style={styles.dateTimeText}>{time}</Text>
                       </View>
@@ -223,7 +224,7 @@ export default function AlmostConfirmedLeadsScreen() {
                     onPress={() => handleFollowUp(followUp)}
                   >
                     <View style={styles.buttonIconContainer}>
-                      <History size={16} color="#3b82f6" />
+                      <History size={16} color={Colors.primary} />
                     </View>
                     <Text style={styles.cardActionButtonText}>History</Text>
                   </TouchableOpacity>
@@ -243,7 +244,7 @@ export default function AlmostConfirmedLeadsScreen() {
                     onPress={() => handleCall(followUp.lead.contact_number || '', followUp.lead)}
                   >
                     <View style={styles.buttonIconContainer}>
-                      <Phone size={16} color="#ef4444" />
+                      <Phone size={16} color={Colors.status.error} />
                     </View>
                     <Text style={styles.cardActionButtonText}>Call</Text>
                   </TouchableOpacity>
@@ -266,7 +267,7 @@ export default function AlmostConfirmedLeadsScreen() {
               <Text style={styles.modalTitle}>Follow-Up History</Text>
               <TouchableOpacity onPress={handleCloseHistoryModal}>
                 <View style={styles.iconContainer}>
-                  <X size={24} color="#666" />
+                  <X size={24} color={Colors.text.primary} />
                 </View>
               </TouchableOpacity>
             </View>
@@ -287,13 +288,13 @@ export default function AlmostConfirmedLeadsScreen() {
                         style={styles.leadInfoActionButton}
                         onPress={() => handleCall(currentLead.contact_number, currentLead)}
                       >
-                        <Phone size={18} color="#fff" />
+                        <Phone size={18} color={Colors.text.inverse} />
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.leadInfoActionButton, styles.whatsappButton]}
                         onPress={() => handleWhatsApp(currentLead.contact_number, currentLead.client_name, currentLead.place)}
                       >
-                        <MessageCircle size={18} color="#fff" />
+                        <MessageCircle size={18} color={Colors.text.inverse} />
                       </TouchableOpacity>
                     </View>
                   )}
@@ -304,12 +305,12 @@ export default function AlmostConfirmedLeadsScreen() {
             <ScrollView style={styles.historyScroll} contentContainerStyle={styles.historyScrollContent} keyboardShouldPersistTaps="handled">
               {historyLoading ? (
                 <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color="#3b82f6" />
+                  <ActivityIndicator size="large" color={Colors.primary} />
                 </View>
               ) : followUpHistory.length === 0 ? (
                 <View style={styles.emptyHistoryContainer}>
                   <View style={styles.iconContainer}>
-                    <History size={48} color="#ccc" />
+                    <History size={48} color={Colors.text.tertiary} />
                   </View>
                   <Text style={styles.emptyHistoryText}>No follow-up history</Text>
                 </View>
@@ -332,7 +333,7 @@ export default function AlmostConfirmedLeadsScreen() {
                       <View style={styles.historyDetail}>
                         <View style={styles.historyDetailRow}>
                           <View style={styles.iconContainer}>
-                            <Calendar size={14} color="#666" />
+                            <Calendar size={14} color={Colors.text.secondary} />
                           </View>
                           <Text style={styles.historyDetailText}>
                             {`Next Follow-Up: ${new Date(history.next_follow_up_date).toLocaleDateString()}${history.next_follow_up_time ? ` at ${history.next_follow_up_time.slice(0, 5)}` : ''}`}
@@ -392,37 +393,39 @@ export default function AlmostConfirmedLeadsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
   },
   backButton: {
     padding: 4,
+    borderRadius: Layout.radius.full,
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   emptyContainer: {
     padding: 40,
@@ -430,33 +433,31 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   followUpCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Layout.shadows.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   followUpHeader: {
     marginBottom: 8,
   },
   leadName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   followUpDetails: {
     gap: 8,
   },
   leadDetail: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   dateTimeRow: {
     flexDirection: 'row',
@@ -476,18 +477,18 @@ const styles = StyleSheet.create({
   },
   dateTimeText: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
     fontWeight: '500',
   },
   remarkContainer: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: Colors.surfaceHighlight,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     marginTop: 4,
   },
   remarkText: {
     fontSize: 14,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   cardActionButtons: {
     flexDirection: 'row',
@@ -495,25 +496,25 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    borderTopColor: Colors.border,
   },
   cardActionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 6,
-    backgroundColor: '#f3f4f6',
+    borderRadius: Layout.radius.lg,
+    backgroundColor: Colors.background,
   },
   buttonIconContainer: {
-    marginRight: 4,
+    marginRight: 6,
   },
   cardActionButtonText: {
     fontSize: 13,
-    fontWeight: '500',
-    color: '#1a1a1a',
+    fontWeight: '600',
+    color: Colors.text.primary,
   },
   modalOverlay: {
     flex: 1,
@@ -521,11 +522,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: Layout.spacing.xl,
     maxHeight: '85%',
+    ...Layout.shadows.lg,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -535,13 +537,13 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   leadInfo: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.surfaceHighlight,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     marginBottom: 20,
   },
   leadInfoHeader: {
@@ -555,18 +557,18 @@ const styles = StyleSheet.create({
   },
   leadInfoName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
   leadInfoDetail: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
     marginBottom: 4,
   },
   leadInfoContact: {
     fontSize: 13,
-    color: '#3b82f6',
+    color: Colors.primary,
     fontWeight: '500',
   },
   leadInfoActions: {
@@ -576,15 +578,11 @@ const styles = StyleSheet.create({
   leadInfoActionButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#3b82f6',
+    borderRadius: Layout.radius.full,
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Layout.shadows.sm,
   },
   whatsappButton: {
     backgroundColor: '#25D366',
@@ -602,16 +600,16 @@ const styles = StyleSheet.create({
   },
   emptyHistoryText: {
     fontSize: 16,
-    color: '#999',
+    color: Colors.text.tertiary,
     marginTop: 16,
   },
   historyCard: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#e5e5e5',
+    borderColor: Colors.border,
   },
   historyHeader: {
     flexDirection: 'row',
@@ -622,29 +620,29 @@ const styles = StyleSheet.create({
   historyActionType: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     flex: 1,
   },
   historyDate: {
     fontSize: 12,
-    color: '#666',
+    color: Colors.text.secondary,
     marginLeft: 8,
   },
   historyNote: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surfaceHighlight,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: Layout.radius.md,
     marginBottom: 12,
   },
   historyNoteLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#666',
+    color: Colors.text.secondary,
     marginBottom: 4,
   },
   historyNoteText: {
     fontSize: 14,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     lineHeight: 20,
   },
   historyDetail: {
@@ -657,22 +655,22 @@ const styles = StyleSheet.create({
   },
   historyDetailText: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   historyDetailLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#666',
+    color: Colors.text.secondary,
     marginBottom: 2,
   },
   historyDetailValue: {
     fontSize: 14,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   historyAmounts: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surfaceHighlight,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: Layout.radius.md,
     marginBottom: 8,
   },
   historyAmountRow: {
@@ -684,14 +682,14 @@ const styles = StyleSheet.create({
   historyAmountLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#666',
+    color: Colors.text.secondary,
   },
   historyAmountValue: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   dueAmountText: {
-    color: '#3b82f6',
+    color: Colors.primary,
   },
 });

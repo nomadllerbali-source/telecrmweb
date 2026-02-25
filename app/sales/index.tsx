@@ -1,14 +1,17 @@
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { ListTodo, Clock, Flame, CheckCircle, Briefcase, LogOut, MessageCircle, Bell, UserPlus, Plus, BookOpen, Settings } from 'lucide-react-native';
+import { ListTodo, Clock, Flame, CheckCircle, Briefcase, LogOut, MessageCircle, Bell, UserPlus, Plus, BookOpen, Settings, ChevronRight, Users, Phone } from 'lucide-react-native';
 import NotificationBar from '@/components/NotificationBar';
+import { Colors, Layout } from '@/constants/Colors';
+import { syncUpcomingNotifications } from '@/services/notifications';
 
 export default function SalesDashboard() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
   const [counts, setCounts] = useState({
     addedLeads: 0,
     allocated: 0,
@@ -17,11 +20,15 @@ export default function SalesDashboard() {
     hot: 0,
     confirmed: 0,
     operations: 0,
+    noResponse: 0,
   });
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   useEffect(() => {
     fetchCounts();
+    if (user?.id) {
+      syncUpcomingNotifications(user.id);
+    }
 
     const subscription = supabase
       .channel('sales_notifications')
@@ -50,6 +57,12 @@ export default function SalesDashboard() {
       fetchCounts();
     }, [])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchCounts(), fetchUnreadNotifications()]);
+    setRefreshing(false);
+  }, []);
 
   const fetchCounts = async () => {
     try {
@@ -98,6 +111,12 @@ export default function SalesDashboard() {
       const almostConfirmedLeadIds = [...new Set((followUpData || []).map((f: any) => f.lead_id))];
       const almostConfirmedCount = almostConfirmedLeadIds.length;
 
+      const { count: noResponseCount } = await supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('assigned_to', user?.id)
+        .eq('status', 'no_response');
+
       setCounts({
         addedLeads: addedLeadsCount || 0,
         allocated: allocatedCount || 0,
@@ -106,6 +125,7 @@ export default function SalesDashboard() {
         hot: hotCount || 0,
         confirmed: confirmedCount || 0,
         operations: operationsCount || 0,
+        noResponse: noResponseCount || 0,
       });
     } catch (err: any) {
       console.error('Error fetching counts:', err);
@@ -137,49 +157,56 @@ export default function SalesDashboard() {
       count: counts.addedLeads,
       icon: UserPlus,
       route: '/sales/added-leads',
-      color: '#14b8a6',
+      color: Colors.primary,
     },
     {
       title: 'Allocated Leads',
       count: counts.allocated,
       icon: ListTodo,
       route: '/sales/allocated-leads',
-      color: '#3b82f6',
+      color: '#6366f1', // Indigo
     },
     {
       title: 'Follow Ups',
       count: counts.followUps,
       icon: Clock,
       route: '/sales/follow-ups',
-      color: '#f59e0b',
+      color: '#f59e0b', // Amber
     },
     {
       title: 'Almost Confirmed',
       count: counts.almostConfirmed,
       icon: CheckCircle,
       route: '/sales/almost-confirmed-leads',
-      color: '#06b6d4',
+      color: '#10b981', // Emerald
     },
     {
       title: 'Hot Leads',
       count: counts.hot,
       icon: Flame,
       route: '/sales/hot-leads',
-      color: '#ef4444',
+      color: '#ef4444', // Red
     },
     {
       title: 'Confirmed Leads',
       count: counts.confirmed,
       icon: CheckCircle,
       route: '/sales/confirmed-leads',
-      color: '#10b981',
+      color: Colors.status.success,
     },
     {
       title: 'Allocated to Operations',
       count: counts.operations,
       icon: Briefcase,
       route: '/sales/operations',
-      color: '#8b5cf6',
+      color: '#8b5cf6', // Purple
+    },
+    {
+      title: 'No Response Leads',
+      count: counts.noResponse,
+      icon: Phone,
+      route: '/sales/no-response-leads',
+      color: '#f59e0b', // Amber/Orange
     },
   ];
 
@@ -189,7 +216,14 @@ export default function SalesDashboard() {
       description: 'View and manage tour packages',
       icon: BookOpen,
       route: '/sales/saved-itinerary',
-      color: '#ec4899',
+      color: '#a78bfa', // Light Purple
+    },
+    {
+      title: 'All Guests',
+      description: 'Search, edit and manage all guest details',
+      icon: Users,
+      route: '/sales/all-guests',
+      color: '#6366f1', // Indigo
     },
   ];
 
@@ -198,15 +232,15 @@ export default function SalesDashboard() {
       <NotificationBar userId={user?.id || ''} />
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Sales Dashboard</Text>
-          <Text style={styles.headerSubtitle}>Welcome, {user?.full_name}</Text>
+          <Text style={styles.headerTitle}>Dashboard</Text>
+          <Text style={styles.headerSubtitle}>Welcome, {user?.full_name?.split(' ')[0]}</Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push('/sales/settings')} style={styles.settingsButton}>
-            <Settings size={24} color="#3b82f6" />
+          <TouchableOpacity onPress={() => router.push('/sales/settings')} style={styles.iconButton}>
+            <Settings size={24} color={Colors.text.primary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/sales/notifications')} style={styles.notificationButton}>
-            <Bell size={24} color="#8b5cf6" />
+          <TouchableOpacity onPress={() => router.push('/sales/notifications')} style={styles.iconButton}>
+            <Bell size={24} color={Colors.text.primary} />
             {unreadNotifications > 0 && (
               <View style={styles.notificationBadge}>
                 <Text style={styles.notificationBadgeText}>
@@ -215,55 +249,71 @@ export default function SalesDashboard() {
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/sales/chat')} style={styles.chatButton}>
-            <MessageCircle size={24} color="#3b82f6" />
+          <TouchableOpacity onPress={() => router.push('/sales/chat')} style={styles.iconButton}>
+            <MessageCircle size={24} color={Colors.primary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-            <LogOut size={24} color="#dc2626" />
+          <TouchableOpacity onPress={handleLogout} style={styles.iconButton}>
+            <LogOut size={24} color={Colors.status.error} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {menuItems.map((item, index) => (
-          <TouchableOpacity
-            key={index}
-            style={styles.menuCard}
-            onPress={() => router.push(item.route as any)}
-          >
-            <View style={[styles.iconContainer, { backgroundColor: item.color }]}>
-              <item.icon size={28} color="#fff" />
-            </View>
-            <View style={styles.menuTextContainer}>
-              <Text style={styles.menuTitle}>{item.title}</Text>
-              <Text style={styles.menuCount}>{item.count} leads</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        <Text style={styles.sectionTitle}>Overview</Text>
+        <View style={styles.grid}>
+          {menuItems.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.menuCard}
+              onPress={() => router.push(item.route as any)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.iconContainer, { backgroundColor: item.color + '15' }]}>
+                <item.icon size={24} color={item.color} />
+              </View>
+              <View style={styles.menuTextContainer}>
+                <Text style={styles.menuCount}>{item.count}</Text>
+                <Text style={styles.menuTitle}>{item.title}</Text>
+              </View>
+              <ChevronRight size={16} color={Colors.text.tertiary} />
+            </TouchableOpacity>
+          ))}
+        </View>
 
-        <Text style={styles.sectionTitle}>Tools</Text>
-        {utilityItems.map((item, index) => (
-          <TouchableOpacity
-            key={`util-${index}`}
-            style={styles.menuCard}
-            onPress={() => router.push(item.route as any)}
-          >
-            <View style={[styles.iconContainer, { backgroundColor: item.color }]}>
-              <item.icon size={28} color="#fff" />
-            </View>
-            <View style={styles.menuTextContainer}>
-              <Text style={styles.menuTitle}>{item.title}</Text>
-              <Text style={styles.menuDescription}>{item.description}</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.grid}>
+          {utilityItems.map((item, index) => (
+            <TouchableOpacity
+              key={`util-${index}`}
+              style={styles.utilityCard}
+              onPress={() => router.push(item.route as any)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.iconContainer, { backgroundColor: item.color + '15' }]}>
+                <item.icon size={24} color={item.color} />
+              </View>
+              <View style={styles.menuTextContainer}>
+                <Text style={styles.utilityTitle}>{item.title}</Text>
+                <Text style={styles.utilityDescription}>{item.description}</Text>
+              </View>
+              <ChevronRight size={16} color={Colors.text.tertiary} />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.spacer} />
       </ScrollView>
 
       <TouchableOpacity
         style={styles.fab}
         onPress={() => router.push('/sales/add-lead')}
+        activeOpacity={0.8}
       >
-        <Plus size={28} color="#fff" />
+        <Plus size={28} color={Colors.text.inverse} />
       </TouchableOpacity>
     </View>
   );
@@ -272,128 +322,141 @@ export default function SalesDashboard() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 20,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontSize: 26,
+    fontWeight: '800',
+    color: Colors.text.primary,
+    letterSpacing: -0.5,
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+    fontSize: 15,
+    color: Colors.text.secondary,
+    marginTop: 2,
+    fontWeight: '500',
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
     alignItems: 'center',
   },
-  settingsButton: {
+  iconButton: {
     padding: 8,
-  },
-  notificationButton: {
-    padding: 8,
-    position: 'relative',
+    borderRadius: Layout.radius.full,
+    backgroundColor: Colors.background,
   },
   notificationBadge: {
     position: 'absolute',
-    top: 0,
-    right: 0,
-    backgroundColor: '#ef4444',
+    top: 4,
+    right: 4,
+    backgroundColor: Colors.status.error,
     borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    minWidth: 18,
+    height: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: Colors.surface,
   },
   notificationBadgeText: {
-    color: '#fff',
-    fontSize: 11,
+    color: Colors.text.inverse,
+    fontSize: 10,
     fontWeight: 'bold',
-  },
-  chatButton: {
-    padding: 8,
-  },
-  logoutButton: {
-    padding: 8,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: Layout.spacing.md,
+    marginTop: Layout.spacing.xs,
+  },
+  grid: {
+    gap: Layout.spacing.md,
   },
   menuCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
+    padding: Layout.spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Layout.shadows.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  utilityCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
+    padding: Layout.spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    ...Layout.shadows.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
+    width: 48,
+    height: 48,
+    borderRadius: Layout.radius.md,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: Layout.spacing.md,
   },
   menuTextContainer: {
     flex: 1,
   },
   menuTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 4,
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.text.secondary,
   },
   menuCount: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 2,
   },
-  menuDescription: {
-    fontSize: 14,
-    color: '#666',
-  },
-  sectionTitle: {
+  utilityTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
-    marginTop: 24,
-    marginBottom: 12,
-    paddingHorizontal: 4,
+    color: Colors.text.primary,
+    marginBottom: 2,
+  },
+  utilityDescription: {
+    fontSize: 13,
+    color: Colors.text.tertiary,
   },
   fab: {
     position: 'absolute',
-    bottom: 24,
-    right: 24,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#14b8a6',
+    bottom: 32,
+    right: 32,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    ...Layout.shadows.lg,
   },
+  spacer: {
+    height: 80,
+  }
 });
+

@@ -1,10 +1,14 @@
-.Trash
-.DS_Store
-.git
+# EAS Ignore
 node_modules
-*.log
+.expo
+dist
+web-build
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.DS_Store
 .env.local
 .cache
-.next
-dist
-build
+.git

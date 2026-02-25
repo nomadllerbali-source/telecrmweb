@@ -1,6 +1,6 @@
 # Nomadller Solutions - Travel Management System
 
-A comprehensive mobile CRM application built with React Native and Expo for managing travel company leads, sales teams, and customer interactions.
+A comprehensive mobile CRM application 
 
 ## Features
 

@@ -24,7 +24,11 @@ export interface Lead {
   remark: string | null;
   assigned_to: string | null;
   assigned_by: string | null;
-  status: 'allocated' | 'follow_up' | 'hot' | 'confirmed' | 'allocated_to_operations' | 'dead';
+  status: 'allocated' | 'follow_up' | 'hot' | 'confirmed' | 'allocated_to_operations' | 'dead' | 'no_response' | 'added_by_sales' | 'almost_confirmed';
+  lead_source: string | null;
+  country_code: string;
+  feedback_requested_at: string | null;
+  call_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -35,8 +39,14 @@ export interface FollowUp {
   sales_person_id: string;
   follow_up_date: string;
   status: 'pending' | 'completed' | 'cancelled';
-  update_type: 'itinerary_created' | 'itinerary_updated' | 'follow_up' | 'advance_paid_confirmed' | 'almost_confirmed' | 'dead' | null;
+  update_type: 'itinerary_created' | 'itinerary_updated' | 'follow_up' | 'advance_paid_confirmed' | 'confirmed_advance_paid' | 'almost_confirmed' | 'dead' | null;
   remark: string | null;
+  itinerary_id: string | null;
+  total_amount: number | null;
+  advance_amount: number | null;
+  due_amount: number | null;
+  transaction_id: string | null;
+  dead_reason: string | null;
   created_at: string;
 }
 

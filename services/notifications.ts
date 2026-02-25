@@ -124,6 +124,98 @@ export async function scheduleFollowUpNotification(
   });
 }
 
+export async function scheduleTripConfirmedNotification(
+  salesPersonId: string,
+  leadId: string,
+  leadName: string,
+  travelDate: Date
+) {
+  const now = new Date();
+  // Reminder 3 days before trip (at 9 AM)
+  const reminderDate = new Date(travelDate);
+  reminderDate.setDate(reminderDate.getDate() - 3);
+  reminderDate.setHours(9, 0, 0, 0);
+
+  const triggerSeconds = Math.max(0, Math.floor((reminderDate.getTime() - now.getTime()) / 1000));
+
+  if (triggerSeconds > 0) {
+    await scheduleLocalNotification(
+      'Upcoming Trip Reminder',
+      `Reminder: ${leadName}'s trip starts in 3 days. Check itineraries and confirmations.`,
+      {
+        type: 'trip_confirmed',
+        salesPersonId,
+        leadId,
+        leadName,
+        travelDate: travelDate.toISOString(),
+      },
+      triggerSeconds
+    );
+  }
+
+  // Also log to DB
+  await supabase.from('notifications').insert({
+    user_id: salesPersonId,
+    type: 'trip_confirmed',
+    title: 'Upcoming Trip Reminder',
+    message: `Reminder: ${leadName}'s trip starts in 3 days.`,
+    data: { leadId, travelDate: travelDate.toISOString(), leadName },
+  });
+}
+
+export async function syncUpcomingNotifications(userId: string) {
+  if (Platform.OS === 'web') return;
+
+  try {
+    // 1. Cancel all existing to avoid duplicates
+    await cancelAllNotifications();
+
+    // 2. Fetch upcoming follow-ups
+    const { data: followUps } = await supabase
+      .from('leads')
+      .select('id, client_name, follow_up_date, follow_up_notes, lead_type')
+      .eq('assigned_to', userId)
+      .gt('follow_up_date', new Date().toISOString())
+      .not('follow_up_date', 'is', null);
+
+    if (followUps) {
+      for (const lead of followUps) {
+        await scheduleFollowUpNotification(
+          userId,
+          lead.client_name,
+          new Date(lead.follow_up_date),
+          lead.follow_up_notes,
+          lead.lead_type || 'normal'
+        );
+      }
+    }
+
+    // 3. Fetch upcoming confirmed trips
+    const { data: confirmedLeads } = await supabase
+      .from('leads')
+      .select('id, client_name, travel_date')
+      .eq('assigned_to', userId)
+      .eq('status', 'confirmed')
+      .gt('travel_date', new Date().toISOString())
+      .not('travel_date', 'is', null);
+
+    if (confirmedLeads) {
+      for (const lead of confirmedLeads) {
+        await scheduleTripConfirmedNotification(
+          userId,
+          lead.id,
+          lead.client_name,
+          new Date(lead.travel_date)
+        );
+      }
+    }
+
+    console.log('Upcoming notifications synced successfully');
+  } catch (error) {
+    console.error('Error syncing upcoming notifications:', error);
+  }
+}
+
 export async function cancelNotification(notificationId: string) {
   if (Platform.OS === 'web') {
     return;
@@ -152,7 +244,7 @@ export function addNotificationResponseListener(
   callback: (response: Notifications.NotificationResponse) => void
 ) {
   if (Platform.OS === 'web') {
-    return () => {};
+    return () => { };
   }
 
   const subscription = Notifications.addNotificationResponseReceivedListener(callback);
@@ -163,7 +255,7 @@ export function addNotificationReceivedListener(
   callback: (notification: Notifications.Notification) => void
 ) {
   if (Platform.OS === 'web') {
-    return () => {};
+    return () => { };
   }
 
   const subscription = Notifications.addNotificationReceivedListener(callback);

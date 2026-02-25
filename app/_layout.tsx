@@ -1,13 +1,16 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
+import { useNotificationHandler } from '@/hooks/useNotificationHandler';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
+import { Colors } from '@/constants/Colors';
 
 export default function RootLayout() {
   useFrameworkReady();
+  useNotificationHandler();
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
@@ -20,8 +23,8 @@ export default function RootLayout() {
 
   if (!isReady) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
-        <ActivityIndicator size="large" color="#2563eb" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}>
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -29,14 +32,14 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <Stack screenOptions={{ headerShown: false }}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: Colors.background } }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="test" />
           <Stack.Screen name="admin" />
           <Stack.Screen name="sales" />
           <Stack.Screen name="+not-found" />
         </Stack>
-        <StatusBar style="auto" />
+        <StatusBar style="light" />
       </AuthProvider>
     </ErrorBoundary>
   );

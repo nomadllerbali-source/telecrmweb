@@ -6,6 +6,9 @@ import { supabase } from '@/lib/supabase';
 import { Lead, Itinerary } from '@/types';
 import { ArrowLeft, Calendar, ChevronDown } from 'lucide-react-native';
 import DateTimePickerComponent from '@/components/DateTimePicker';
+import { Colors, Layout } from '@/constants/Colors';
+import { scheduleTripConfirmedNotification } from '@/services/notifications';
+import { syncAdvancePaymentToFinance } from '@/services/financeSync';
 
 export default function ConfirmLeadScreen() {
   const { user } = useAuth();
@@ -101,10 +104,63 @@ export default function ConfirmLeadScreen() {
         },
       ]);
 
+      // Update lead status
       await supabase
         .from('leads')
         .update({ status: 'confirmed', updated_at: new Date().toISOString() })
         .eq('id', leadId);
+
+      // Schedule trip reminder notification (3 days before)
+      if (user && formData.travelDate && lead?.client_name) {
+        try {
+          await scheduleTripConfirmedNotification(
+            user.id,
+            leadId as string,
+            lead.client_name,
+            new Date(formData.travelDate)
+          );
+        } catch (notifErr) {
+          console.error('Notification scheduling failed:', notifErr);
+        }
+      }
+
+      // 🆕 Sync advance payment to Finance Tracker
+      console.log('🚀 ATTEMPTING FINANCE SYNC FROM CONFIRM SCREEN');
+      try {
+        const syncResult = await syncAdvancePaymentToFinance({
+          leadName: lead?.client_name || '',
+          advanceAmount: parseFloat(formData.advanceAmount),
+          totalAmount: parseFloat(formData.totalAmount),
+          dueAmount: parseFloat(formData.totalAmount) - parseFloat(formData.advanceAmount),
+          salesPersonId: user?.id || '',
+          salesPersonEmail: user?.email || '',
+          // @ts-ignore
+          salesPersonName: user?.full_name || '',
+          transactionId: formData.transactionId || 'N/A',
+          place: lead?.place || '',
+          pax: lead?.no_of_pax || 0,
+          phoneNumber: lead?.contact_number || '',
+          travelDate: formData.travelDate,
+          crmLeadId: leadId as string
+        });
+
+        if (syncResult.success) {
+          console.log('✅ Advance payment synced to Finance Tracker');
+          const tx = Array.isArray(syncResult.data) ? syncResult.data[0] : syncResult.data;
+          Alert.alert(
+            'Finance Sync',
+            `Successfully synced booking to Finance Tracker!\n\n` +
+            `Amount: ₹${tx?.amount?.toLocaleString()}\n` +
+            `Tx ID: ${tx?.id?.slice(0, 8)}...`
+          );
+        } else {
+          console.warn('⚠️ Failed to sync to Finance Tracker:', syncResult.error);
+          Alert.alert('Finance Sync Error', 'Lead confirmed, but failed to sync to Finance Tracker: ' + syncResult.error);
+        }
+      } catch (financeError: any) {
+        console.error('❌ Error syncing to Finance Tracker:', financeError);
+        Alert.alert('Finance Sync Critical Error', 'Failed to connect to Finance Tracker: ' + financeError.message);
+      }
 
       Alert.alert('Success', 'Lead confirmed successfully');
       router.push('/sales');
@@ -118,7 +174,7 @@ export default function ConfirmLeadScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#10b981" />
+        <ActivityIndicator size="large" color={Colors.status.success} />
       </View>
     );
   }
@@ -128,7 +184,7 @@ export default function ConfirmLeadScreen() {
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <View style={styles.iconContainer}>
-            <ArrowLeft size={24} color="#1a1a1a" />
+            <ArrowLeft size={24} color={Colors.text.primary} />
           </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Confirm Lead</Text>
@@ -180,7 +236,7 @@ export default function ConfirmLeadScreen() {
             <Text style={formData.paymentMode ? styles.dropdownText : styles.dropdownPlaceholder}>
               {formData.paymentMode ? formData.paymentMode.toUpperCase() : 'Select payment mode'}
             </Text>
-            <ChevronDown size={20} color="#666" />
+            <ChevronDown size={20} color={Colors.text.secondary} />
           </TouchableOpacity>
 
           {showPaymentMode && (
@@ -265,11 +321,11 @@ export default function ConfirmLeadScreen() {
             <Text style={selectedItinerary ? styles.dropdownText : styles.dropdownPlaceholder}>
               {selectedItinerary ? selectedItinerary.name : 'Select an itinerary'}
             </Text>
-            <ChevronDown size={20} color="#666" />
+            <ChevronDown size={20} color={Colors.text.secondary} />
           </TouchableOpacity>
 
           {showItineraryDropdown && (
-            <View style={styles.dropdownList}>
+            <ScrollView style={styles.dropdownList} nestedScrollEnabled={true}>
               {itineraries.length === 0 ? (
                 <View style={styles.dropdownItem}>
                   <Text style={styles.dropdownItemText}>No itineraries available</Text>
@@ -291,7 +347,7 @@ export default function ConfirmLeadScreen() {
                   </TouchableOpacity>
                 ))
               )}
-            </View>
+            </ScrollView>
           )}
         </View>
 
@@ -313,7 +369,7 @@ export default function ConfirmLeadScreen() {
           disabled={submitting}
         >
           {submitting ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={Colors.text.inverse} />
           ) : (
             <Text style={styles.submitButtonText}>Confirm Booking</Text>
           )}
@@ -326,26 +382,29 @@ export default function ConfirmLeadScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+    ...Layout.shadows.sm,
   },
   backButton: {
     padding: 4,
+    borderRadius: Layout.radius.full,
   },
   iconContainer: {
     justifyContent: 'center',
@@ -353,56 +412,58 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   leadInfo: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
+    padding: Layout.spacing.lg,
     marginBottom: 16,
+    ...Layout.shadows.sm,
   },
   leadName: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
   leadDetail: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     marginBottom: 8,
     marginTop: 8,
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     padding: 12,
     fontSize: 16,
     marginBottom: 12,
+    color: Colors.text.primary,
   },
   textArea: {
     height: 100,
     textAlignVertical: 'top',
   },
   dateTimeInputContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
@@ -412,14 +473,14 @@ const styles = StyleSheet.create({
   dateTimeInput: {
     flex: 1,
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     padding: 0,
   },
   dropdown: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     padding: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -428,52 +489,54 @@ const styles = StyleSheet.create({
   },
   dropdownText: {
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   dropdownPlaceholder: {
     fontSize: 16,
-    color: '#999',
+    color: Colors.text.tertiary,
   },
   dropdownList: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     marginTop: -12,
     marginBottom: 12,
+    maxHeight: 250,
     overflow: 'hidden',
+    ...Layout.shadows.sm,
   },
   dropdownItem: {
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: Colors.border,
   },
   dropdownItemText: {
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   dropdownItemTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
   dropdownItemSubtitle: {
     fontSize: 13,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   accountDetails: {
-    backgroundColor: '#e0f2fe',
-    borderRadius: 12,
+    backgroundColor: Colors.surfaceHighlight,
+    borderRadius: Layout.radius.lg,
     padding: 16,
     marginBottom: 16,
     borderWidth: 2,
-    borderColor: '#3b82f6',
+    borderColor: Colors.primary,
   },
   accountTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1e40af',
+    color: Colors.primary,
     marginBottom: 12,
   },
   accountRow: {
@@ -483,34 +546,35 @@ const styles = StyleSheet.create({
   },
   accountLabel: {
     fontSize: 14,
-    color: '#1e40af',
+    color: Colors.primary,
     fontWeight: '500',
   },
   accountValue: {
     fontSize: 14,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     fontWeight: '600',
   },
   accountNote: {
     fontSize: 12,
-    color: '#1e40af',
+    color: Colors.primary,
     marginTop: 8,
     fontStyle: 'italic',
   },
   submitButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: Colors.status.success,
     height: 48,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 16,
     marginBottom: 32,
+    ...Layout.shadows.md,
   },
   submitButtonDisabled: {
-    backgroundColor: '#86efac',
+    opacity: 0.7,
   },
   submitButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 16,
     fontWeight: '600',
   },

@@ -8,6 +8,7 @@ import { ArrowLeft, Phone, Calendar, Clock, Package, ChevronDown, Search, Check 
 import DateTimePickerComponent from '@/components/DateTimePicker';
 import ItinerarySender from '@/components/ItinerarySender';
 import { scheduleFollowUpNotification } from '@/services/notifications';
+import { Colors, Layout } from '@/constants/Colors';
 
 export default function LeadActionScreen() {
   const { user } = useAuth();
@@ -18,6 +19,7 @@ export default function LeadActionScreen() {
   const [lead, setLead] = useState<Lead | null>(null);
   const [callStartTime, setCallStartTime] = useState<Date | null>(null);
   const [callInProgress, setCallInProgress] = useState(false);
+  const [callCount, setCallCount] = useState(0);
 
   const [updateType, setUpdateType] = useState<string>('');
   const [remark, setRemark] = useState('');
@@ -37,13 +39,31 @@ export default function LeadActionScreen() {
   const [filterPax, setFilterPax] = useState<string>('');
   const [filterDays, setFilterDays] = useState<string>('');
   const [filterTransport, setFilterTransport] = useState<string>('');
+  const [lastItineraryId, setLastItineraryId] = useState<string | null>(null);
+  const [exchangeRate, setExchangeRate] = useState(83);
 
   useEffect(() => {
-    fetchLead();
-    fetchFollowUpHistory();
+    if (leadId) {
+      fetchLead();
+      fetchFollowUpHistory();
+      fetchLatestItineraryForLead();
+    }
     fetchItineraries();
     fetchDestinations();
+    fetchExchangeRate();
   }, [leadId]);
+
+  const fetchExchangeRate = async () => {
+    try {
+      const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+      const data = await response.json();
+      if (data.rates && data.rates.INR) {
+        setExchangeRate(data.rates.INR);
+      }
+    } catch (error) {
+      console.error('Error fetching exchange rate:', error);
+    }
+  };
 
   const fetchDestinations = async () => {
     try {
@@ -74,12 +94,32 @@ export default function LeadActionScreen() {
 
       if (error) throw error;
       setLead(data);
+      setCallCount(data?.call_count || 0);
     } catch (err: any) {
       console.error('Error fetching lead:', err);
       Alert.alert('Error', 'Failed to load lead details');
       router.back();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchLatestItineraryForLead = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('follow_ups')
+        .select('itinerary_id')
+        .eq('lead_id', leadId)
+        .not('itinerary_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setLastItineraryId(data[0].itinerary_id);
+      }
+    } catch (err) {
+      console.error('Error fetching latest itinerary:', err);
     }
   };
 
@@ -184,6 +224,15 @@ export default function LeadActionScreen() {
           call_duration: duration,
         },
       ]);
+
+      // Increment call count in leads table
+      const newCallCount = callCount + 1;
+      await supabase
+        .from('leads')
+        .update({ call_count: newCallCount })
+        .eq('id', leadId);
+
+      setCallCount(newCallCount);
     } catch (err: any) {
       console.error('Error logging call:', err);
     }
@@ -205,8 +254,7 @@ export default function LeadActionScreen() {
     }
 
     if (method === 'whatsapp') {
-      const exchangeRate = 83;
-      const inrAmount = Math.round(selectedItinerary.cost_usd * exchangeRate);
+      const costINR = selectedItinerary.cost_inr || Math.round(selectedItinerary.cost_usd * (exchangeRate + 2));
 
       const message = `Hi ${lead.client_name},
 
@@ -217,7 +265,7 @@ Duration: ${selectedItinerary.days} Days
 
 Cost:
 USD $${selectedItinerary.cost_usd.toFixed(2)}
-INR ₹${inrAmount}
+INR ₹${costINR}
 
 *Itinerary Overview:*
 ${selectedItinerary.full_itinerary || 'Please contact us for detailed itinerary'}
@@ -252,12 +300,31 @@ TeleCRM Team`;
           status: 'completed',
           update_type: 'itinerary_created',
           remark: `Itinerary "${selectedItinerary.name}" sent via WhatsApp`,
+          itinerary_id: selectedItinerary.id,
         });
 
+        setLastItineraryId(selectedItinerary.id);
         Alert.alert('Success', 'Itinerary sent via WhatsApp!');
       } catch (err: any) {
         console.error('Error sending via WhatsApp:', err);
         Alert.alert('Error', 'Failed to send itinerary');
+      }
+    } else if (method === 'manual') {
+      try {
+        await supabase.from('follow_ups').insert({
+          lead_id: leadId,
+          sales_person_id: user?.id,
+          follow_up_date: new Date().toISOString(),
+          status: 'completed',
+          update_type: 'itinerary_created',
+          remark: `Itinerary "${selectedItinerary.name}" recorded as sent (Manual)`,
+          itinerary_id: selectedItinerary.id,
+        });
+        setLastItineraryId(selectedItinerary.id);
+        Alert.alert('Success', 'Itinerary recorded successfully');
+      } catch (err: any) {
+        console.error('Error recording itinerary:', err);
+        Alert.alert('Error', 'Failed to record itinerary');
       }
     }
 
@@ -266,6 +333,56 @@ TeleCRM Team`;
     setSendManually(false);
     setItinerarySearchText('');
     fetchFollowUpHistory();
+  };
+
+  const handleMarkNoResponse = async () => {
+    try {
+      if (!lead || !user?.id) return;
+
+      Alert.alert(
+        'Mark as No Response',
+        `This lead has ${callCount} call attempts. Mark as no response?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Confirm',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                setSubmitting(true);
+
+                // Update lead status to no_response
+                await supabase
+                  .from('leads')
+                  .update({ status: 'no_response', updated_at: new Date().toISOString() })
+                  .eq('id', leadId);
+
+                // Add follow-up record
+                await supabase.from('follow_ups').insert([
+                  {
+                    lead_id: leadId,
+                    sales_person_id: user.id,
+                    follow_up_date: new Date().toISOString(),
+                    status: 'completed',
+                    update_type: 'no_response',
+                    remark: `Marked as no response after ${callCount} call attempts`,
+                  },
+                ]);
+
+                Alert.alert('Success', 'Lead marked as no response');
+                router.back();
+              } catch (err: any) {
+                Alert.alert('Error', err.message);
+              } finally {
+                setSubmitting(false);
+              }
+            },
+          },
+        ]
+      );
+    } catch (err: any) {
+      console.error('Error marking no response:', err);
+    }
   };
 
   const handleSubmit = async () => {
@@ -313,6 +430,7 @@ TeleCRM Team`;
             status: 'pending',
             update_type: updateType,
             remark: remark,
+            itinerary_id: lastItineraryId,
           },
         ]);
 
@@ -334,6 +452,7 @@ TeleCRM Team`;
             status: 'completed',
             update_type: updateType,
             remark: remark,
+            itinerary_id: lastItineraryId,
           },
         ]);
       }
@@ -350,7 +469,7 @@ TeleCRM Team`;
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -360,14 +479,14 @@ TeleCRM Team`;
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <View style={styles.iconContainer}>
-            <ArrowLeft size={24} color="#1a1a1a" />
+            <ArrowLeft size={24} color={Colors.text.primary} />
           </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Follow Up Update</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
         <View style={styles.leadInfo}>
           <Text style={styles.leadName}>{lead?.client_name}</Text>
           <Text style={styles.leadDetail}>{lead?.place} - {lead?.no_of_pax} Pax</Text>
@@ -380,10 +499,10 @@ TeleCRM Team`;
         >
           <View style={styles.callButtonContent}>
             <View style={styles.iconContainer}>
-              <Phone size={24} color="#fff" />
+              <Phone size={24} color={Colors.text.inverse} />
             </View>
             <Text style={styles.callButtonText}>
-              {callInProgress ? 'End Call' : 'Start Call'}
+              {callInProgress ? 'End Call' : `Start Call (${callCount})`}
             </Text>
           </View>
         </TouchableOpacity>
@@ -426,6 +545,7 @@ TeleCRM Team`;
           value={remark}
           onChangeText={setRemark}
           placeholder="Enter remarks"
+          placeholderTextColor={Colors.text.tertiary}
           multiline
           numberOfLines={4}
         />
@@ -449,12 +569,22 @@ TeleCRM Team`;
         )}
 
         <TouchableOpacity
+          style={[styles.noResponseButton, submitting && styles.submitButtonDisabled]}
+          onPress={handleMarkNoResponse}
+          disabled={submitting}
+        >
+          <Text style={styles.noResponseButtonText}>
+            Mark as No Response ({callCount} calls)
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
           onPress={handleSubmit}
           disabled={submitting}
         >
           {submitting ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={Colors.text.inverse} />
           ) : (
             <Text style={styles.submitButtonText}>Submit Update</Text>
           )}
@@ -468,7 +598,7 @@ TeleCRM Team`;
               style={[styles.checkbox, sendManually && styles.checkboxChecked]}
               onPress={() => setSendManually(!sendManually)}
             >
-              {sendManually && <Check size={16} color="#fff" />}
+              {sendManually && <Check size={16} color={Colors.text.inverse} />}
             </TouchableOpacity>
             <Text style={styles.checkboxLabel}>Send Manually (skip selection)</Text>
           </View>
@@ -519,6 +649,7 @@ TeleCRM Team`;
                         value={filterPax}
                         onChangeText={setFilterPax}
                         keyboardType="numeric"
+                        placeholderTextColor={Colors.text.tertiary}
                       />
                     </View>
 
@@ -530,6 +661,7 @@ TeleCRM Team`;
                         value={filterDays}
                         onChangeText={setFilterDays}
                         keyboardType="numeric"
+                        placeholderTextColor={Colors.text.tertiary}
                       />
                     </View>
 
@@ -562,55 +694,13 @@ TeleCRM Team`;
                   <Text style={styles.label}>Select Itinerary</Text>
                   <TouchableOpacity
                     style={styles.dropdown}
-                    onPress={() => setShowItineraryDropdown(!showItineraryDropdown)}
+                    onPress={() => setShowItineraryDropdown(true)}
                   >
                     <Text style={[styles.dropdownText, !selectedItinerary && styles.dropdownPlaceholder]}>
                       {selectedItinerary ? selectedItinerary.name : 'Choose an itinerary...'}
                     </Text>
-                    <ChevronDown size={20} color="#666" />
+                    <ChevronDown size={20} color={Colors.text.secondary} />
                   </TouchableOpacity>
-
-                  {showItineraryDropdown && (
-                    <View style={styles.dropdownContent}>
-                      <View style={styles.searchContainer}>
-                        <Search size={16} color="#999" />
-                        <TextInput
-                          style={styles.searchInput}
-                          placeholder="Search itineraries..."
-                          value={itinerarySearchText}
-                          onChangeText={setItinerarySearchText}
-                          placeholderTextColor="#999"
-                        />
-                      </View>
-
-                      <ScrollView style={styles.dropdownList}>
-                        {filteredItineraries.length === 0 ? (
-                          <Text style={styles.emptyDropdownText}>No itineraries found</Text>
-                        ) : (
-                          filteredItineraries.map((itinerary) => (
-                            <TouchableOpacity
-                              key={itinerary.id}
-                              style={[
-                                styles.dropdownItem,
-                                selectedItinerary?.id === itinerary.id && styles.dropdownItemSelected,
-                              ]}
-                              onPress={() => handleSelectItinerary(itinerary)}
-                            >
-                              <View style={styles.dropdownItemContent}>
-                                <Text style={styles.dropdownItemName}>{itinerary.name}</Text>
-                                <Text style={styles.dropdownItemDetails}>
-                                  {itinerary.days} Days • ${itinerary.cost_usd.toFixed(2)}
-                                </Text>
-                              </View>
-                              {selectedItinerary?.id === itinerary.id && (
-                                <Check size={20} color="#3b82f6" />
-                              )}
-                            </TouchableOpacity>
-                          ))
-                        )}
-                      </ScrollView>
-                    </View>
-                  )}
                 </>
               )}
 
@@ -619,7 +709,7 @@ TeleCRM Team`;
                   style={styles.sendButton}
                   onPress={() => setShowSendItineraryModal(true)}
                 >
-                  <Package size={18} color="#fff" />
+                  <Package size={18} color={Colors.text.inverse} />
                   <Text style={styles.sendButtonText}>Send Itinerary</Text>
                 </TouchableOpacity>
               )}
@@ -631,7 +721,7 @@ TeleCRM Team`;
               style={styles.sendButton}
               onPress={() => setShowSendItineraryModal(true)}
             >
-              <Package size={18} color="#fff" />
+              <Package size={18} color={Colors.text.inverse} />
               <Text style={styles.sendButtonText}>Record Manual Send</Text>
             </TouchableOpacity>
           )}
@@ -664,6 +754,7 @@ TeleCRM Team`;
                   <TextInput
                     style={styles.manualInput}
                     placeholder="Enter how you sent the itinerary (email, SMS, etc.)"
+                    placeholderTextColor={Colors.text.tertiary}
                     onChangeText={(text) => {
                       if (!selectedItinerary) {
                         setSelectedItinerary({ id: 'manual', name: 'Manual Send' } as any);
@@ -706,7 +797,7 @@ TeleCRM Team`;
           style={styles.itineraryToggle}
           onPress={() => setShowItinerarySection(!showItinerarySection)}
         >
-          <Package size={20} color="#3b82f6" />
+          <Package size={20} color={Colors.primary} />
           <Text style={styles.itineraryToggleText}>
             {showItinerarySection ? 'Hide Itinerary Sender' : 'Send Itinerary to Guest'}
           </Text>
@@ -747,6 +838,66 @@ TeleCRM Team`;
           </>
         )}
       </ScrollView>
+
+      {/* Itinerary Selection Modal */}
+      <Modal
+        visible={showItineraryDropdown}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowItineraryDropdown(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <TouchableOpacity onPress={() => setShowItineraryDropdown(false)} style={styles.closeButton}>
+              <Text style={styles.closeButtonText}>×</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Select Itinerary</Text>
+
+            <View style={[styles.searchContainer, { paddingHorizontal: 16, paddingVertical: 12 }]}>
+              <Search size={16} color={Colors.text.tertiary} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search itineraries..."
+                value={itinerarySearchText}
+                onChangeText={setItinerarySearchText}
+                placeholderTextColor={Colors.text.tertiary}
+              />
+            </View>
+
+            <ScrollView style={styles.modalScrollView}>
+              {filteredItineraries.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyDropdownText}>No itineraries found</Text>
+                </View>
+              ) : (
+                filteredItineraries.map((itinerary) => (
+                  <TouchableOpacity
+                    key={itinerary.id}
+                    style={[
+                      styles.modalItem,
+                      selectedItinerary?.id === itinerary.id && styles.modalItemSelected,
+                    ]}
+                    onPress={() => {
+                      handleSelectItinerary(itinerary);
+                      setShowItineraryDropdown(false);
+                    }}
+                  >
+                    <View style={styles.modalItemContent}>
+                      <Text style={styles.modalItemName}>{itinerary.name}</Text>
+                      <Text style={styles.modalItemDetails}>
+                        {itinerary.days} Days • ${itinerary.cost_usd.toFixed(2)}
+                      </Text>
+                    </View>
+                    {selectedItinerary?.id === itinerary.id && (
+                      <Check size={20} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -754,173 +905,198 @@ TeleCRM Team`;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+    ...Layout.shadows.sm,
   },
   backButton: {
-    padding: 4,
+    padding: 8,
+    borderRadius: Layout.radius.full,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   leadInfo: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
+    marginBottom: Layout.spacing.lg,
+    ...Layout.shadows.sm,
   },
   leadName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
   leadDetail: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 15,
+    color: Colors.text.secondary,
+    fontWeight: '500',
   },
   callButton: {
-    backgroundColor: '#3b82f6',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 24,
+    backgroundColor: Colors.primary,
+    padding: Layout.spacing.md,
+    borderRadius: Layout.radius.lg,
+    marginBottom: Layout.spacing.xl,
+    ...Layout.shadows.md,
   },
   callButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 12,
   },
   callButtonActive: {
-    backgroundColor: '#ef4444',
+    backgroundColor: Colors.status.error,
   },
   callButtonDisabled: {
-    backgroundColor: '#93c5fd',
-    opacity: 0.6,
+    backgroundColor: Colors.text.tertiary,
+    opacity: 0.8,
   },
   iconContainer: {
     justifyContent: 'center',
     alignItems: 'center',
   },
   callButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 18,
     fontWeight: '600',
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 16,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: Layout.spacing.md,
+    marginTop: Layout.spacing.xs,
   },
   label: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     marginBottom: 8,
     marginTop: 8,
   },
   radioGroup: {
-    gap: 8,
-    marginBottom: 16,
+    gap: 10,
+    marginBottom: Layout.spacing.lg,
   },
   radioButton: {
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#fff',
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    backgroundColor: Colors.surface,
   },
   radioButtonActive: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#3b82f6',
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   radioButtonText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 15,
+    color: Colors.text.secondary,
     fontWeight: '500',
   },
   radioButtonTextActive: {
-    color: '#fff',
+    color: Colors.text.inverse,
+    fontWeight: '600',
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    padding: 14,
     fontSize: 16,
-    marginBottom: 12,
+    color: Colors.text.primary,
+    marginBottom: Layout.spacing.md,
   },
   textArea: {
-    height: 100,
+    height: 120,
     textAlignVertical: 'top',
   },
   submitButton: {
-    backgroundColor: '#10b981',
-    height: 48,
-    borderRadius: 8,
+    backgroundColor: Colors.status.success,
+    height: 52,
+    borderRadius: Layout.radius.lg,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 32,
+    marginTop: Layout.spacing.lg,
+    marginBottom: 40,
+    ...Layout.shadows.md,
   },
   submitButtonDisabled: {
-    backgroundColor: '#86efac',
+    opacity: 0.7,
   },
   submitButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  noResponseButton: {
+    backgroundColor: Colors.status.warning,
+    height: 52,
+    borderRadius: Layout.radius.lg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: Layout.spacing.md,
+    ...Layout.shadows.md,
+  },
+  noResponseButtonText: {
+    color: Colors.text.inverse,
+    fontSize: 16,
+    fontWeight: '700',
   },
   dateTimeInputContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
+    gap: 12,
+    marginBottom: Layout.spacing.md,
   },
   dateTimeInput: {
     flex: 1,
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     padding: 0,
   },
   historyCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
+    padding: Layout.spacing.md,
+    marginBottom: Layout.spacing.md,
     borderLeftWidth: 4,
-    borderLeftColor: '#3b82f6',
+    borderLeftColor: Colors.primary,
+    ...Layout.shadows.sm,
   },
   historyHeader: {
     flexDirection: 'row',
@@ -930,28 +1106,29 @@ const styles = StyleSheet.create({
   },
   historyType: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#3b82f6',
+    fontWeight: '700',
+    color: Colors.primary,
   },
   historyStatus: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#10b981',
+    color: Colors.status.success,
     textTransform: 'capitalize',
   },
   historyRemark: {
-    fontSize: 14,
-    color: '#1a1a1a',
+    fontSize: 15,
+    color: Colors.text.primary,
     marginBottom: 8,
+    lineHeight: 22,
   },
   historyDate: {
     fontSize: 12,
-    color: '#666',
+    color: Colors.text.secondary,
     marginBottom: 4,
   },
   historyBy: {
     fontSize: 12,
-    color: '#666',
+    color: Colors.text.tertiary,
     fontStyle: 'italic',
   },
   itineraryToggle: {
@@ -959,25 +1136,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    backgroundColor: '#f0f7ff',
+    backgroundColor: Colors.surfaceHighlight,
     borderWidth: 1,
-    borderColor: '#3b82f6',
-    borderRadius: 8,
-    marginTop: 16,
-    marginBottom: 16,
+    borderColor: Colors.primary,
+    borderRadius: Layout.radius.lg,
+    marginTop: Layout.spacing.lg,
+    marginBottom: Layout.spacing.lg,
   },
   itineraryToggleText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#3b82f6',
+    color: Colors.primary,
   },
   itinerarySection: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
+    marginBottom: Layout.spacing.lg,
+    ...Layout.shadows.sm,
   },
   checkboxContainer: {
     flexDirection: 'row',
@@ -989,28 +1167,28 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderWidth: 2,
-    borderColor: '#ddd',
+    borderColor: Colors.border,
     borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
   },
   checkboxChecked: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#3b82f6',
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   checkboxLabel: {
     fontSize: 15,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     fontWeight: '500',
   },
   dropdown: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: Colors.background,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -1018,35 +1196,36 @@ const styles = StyleSheet.create({
   },
   dropdownText: {
     fontSize: 15,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     fontWeight: '500',
     flex: 1,
   },
   dropdownPlaceholder: {
-    color: '#999',
+    color: Colors.text.tertiary,
   },
   dropdownContent: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     marginBottom: 12,
     overflow: 'hidden',
+    ...Layout.shadows.md,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 8,
     fontSize: 14,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   dropdownList: {
     maxHeight: 250,
@@ -1055,45 +1234,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: Colors.border,
   },
   dropdownItemSelected: {
-    backgroundColor: '#f0f7ff',
+    backgroundColor: Colors.surfaceHighlight,
   },
   dropdownItemContent: {
     flex: 1,
   },
   dropdownItemName: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
   dropdownItemDetails: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: Colors.text.secondary,
   },
   emptyDropdownText: {
     fontSize: 14,
-    color: '#999',
+    color: Colors.text.tertiary,
     textAlign: 'center',
     paddingVertical: 20,
   },
   sendButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: Colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: Layout.radius.lg,
     gap: 8,
-    marginTop: 8,
+    marginTop: Layout.spacing.sm,
+    ...Layout.shadows.sm,
   },
   sendButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 15,
     fontWeight: '600',
   },
@@ -1103,11 +1283,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 20,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Layout.radius.xl,
+    borderTopRightRadius: Layout.radius.xl,
+    padding: Layout.spacing.xl,
     paddingBottom: 40,
+    ...Layout.shadows.lg,
   },
   closeButton: {
     alignSelf: 'flex-end',
@@ -1116,22 +1297,24 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   closeButtonText: {
-    fontSize: 28,
-    color: '#999',
-    fontWeight: '300',
+    fontSize: 24,
+    color: Colors.text.tertiary,
+    fontWeight: '600',
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#1a1a1a',
-    marginBottom: 16,
+    color: Colors.text.primary,
+    marginBottom: Layout.spacing.lg,
   },
   itineraryDetails: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
+    backgroundColor: Colors.background,
+    borderRadius: Layout.radius.lg,
+    padding: 16,
+    marginBottom: 20,
     gap: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   detailRow: {
     flexDirection: 'row',
@@ -1139,37 +1322,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   detailLabel: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 15,
+    color: Colors.text.secondary,
   },
   detailValue: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#3b82f6',
+    color: Colors.primary,
   },
   confirmButton: {
-    backgroundColor: '#3b82f6',
-    paddingVertical: 14,
-    borderRadius: 8,
+    backgroundColor: Colors.primary,
+    paddingVertical: 16,
+    borderRadius: Layout.radius.lg,
     alignItems: 'center',
     marginTop: 12,
+    ...Layout.shadows.md,
   },
   confirmButtonText: {
-    color: '#fff',
-    fontSize: 15,
+    color: Colors.text.inverse,
+    fontSize: 16,
     fontWeight: '600',
   },
   manualInput: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: Colors.background,
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     paddingHorizontal: 12,
     paddingVertical: 12,
-    fontSize: 14,
-    color: '#1a1a1a',
-    marginBottom: 16,
-    minHeight: 60,
+    fontSize: 15,
+    color: Colors.text.primary,
+    marginBottom: 20,
+    minHeight: 80,
     textAlignVertical: 'top',
   },
   dropdownContainer: {
@@ -1182,32 +1366,32 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   destinationTag: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#f2f2f7',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 100,
+    backgroundColor: Colors.background,
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#e5e5ea',
+    borderColor: Colors.border,
   },
   destinationTagActive: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#3b82f6',
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   destinationTagText: {
     fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
+    color: Colors.text.primary,
+    fontWeight: '600',
   },
   destinationTagTextActive: {
-    color: '#fff',
+    color: Colors.text.inverse,
   },
   filtersContainer: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: Colors.surfaceHighlight,
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    padding: 16,
     marginBottom: 16,
     gap: 12,
   },
@@ -1217,40 +1401,72 @@ const styles = StyleSheet.create({
   filterLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#666',
+    color: Colors.text.secondary,
     marginBottom: 6,
   },
   filterInput: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 14,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   transportDropdown: {
     gap: 8,
   },
   transportOption: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#fff',
+    paddingVertical: 10,
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.md,
   },
   transportOptionActive: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#3b82f6',
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   transportOptionText: {
     fontSize: 13,
-    color: '#666',
+    color: Colors.text.secondary,
     fontWeight: '500',
   },
   transportOptionTextActive: {
-    color: '#fff',
+    color: Colors.text.inverse,
+  },
+  emptyState: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  modalItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalItemSelected: {
+    backgroundColor: Colors.surfaceHighlight,
+  },
+  modalItemContent: {
+    flex: 1,
+  },
+  modalItemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  modalItemDetails: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+  },
+  modalScrollView: {
+    flex: 1,
   },
 });

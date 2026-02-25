@@ -6,6 +6,9 @@ import { supabase } from '@/lib/supabase';
 import { Lead } from '@/types';
 import { ArrowLeft, Phone, MessageCircle, MapPin, Users, DollarSign, Calendar, X, ChevronDown } from 'lucide-react-native';
 import DateTimePickerComponent from '@/components/DateTimePicker';
+import { Colors, Layout } from '@/constants/Colors';
+import { syncAdvancePaymentToFinance } from '@/services/financeSync';
+import { Alert } from 'react-native';
 
 export default function AllocatedLeadsScreen() {
   const { user } = useAuth();
@@ -150,6 +153,44 @@ export default function AllocatedLeadsScreen() {
           .from('leads')
           .update({ status: 'confirmed' })
           .eq('id', currentLead.id);
+
+        // 🆕 Sync advance payment to Finance Tracker
+        console.log('🚀 ATTEMPTING FINANCE SYNC FROM ALLOCATED LEADS');
+        try {
+          const syncResult = await syncAdvancePaymentToFinance({
+            leadName: currentLead.client_name,
+            advanceAmount: parseFloat(advanceAmount),
+            totalAmount: parseFloat(totalAmount),
+            dueAmount: calculateDueAmount(),
+            salesPersonId: user?.id || '',
+            salesPersonEmail: user?.email || '',
+            // @ts-ignore
+            salesPersonName: user?.full_name || '',
+            transactionId: transactionId || 'N/A',
+            place: currentLead.place,
+            pax: currentLead.no_of_pax,
+            phoneNumber: currentLead.contact_number,
+            travelDate: nextFollowUpDate.toISOString().split('T')[0], // Using nextFollowUpDate as a proxy if travelDate not separately tracked here
+            crmLeadId: currentLead.id
+          });
+
+          if (syncResult.success) {
+            console.log('✅ Advance payment synced to Finance Tracker');
+            const tx = Array.isArray(syncResult.data) ? syncResult.data[0] : syncResult.data;
+            Alert.alert(
+              'Finance Sync',
+              `Successfully synced booking to Finance Tracker!\n\n` +
+              `Amount: ₹${tx?.amount?.toLocaleString()}\n` +
+              `Tx ID: ${tx?.id?.slice(0, 8)}...`
+            );
+          } else {
+            console.warn('⚠️ Failed to sync to Finance Tracker:', syncResult.error);
+            Alert.alert('Finance Sync Error', 'Lead confirmed, but failed to sync to Finance Tracker: ' + syncResult.error);
+          }
+        } catch (financeError: any) {
+          console.error('❌ Error syncing to Finance Tracker:', financeError);
+          Alert.alert('Finance Sync Critical Error', 'Failed to connect to Finance Tracker: ' + financeError.message);
+        }
       }
 
       if (actionType === 'dead') {
@@ -200,16 +241,16 @@ export default function AllocatedLeadsScreen() {
 
   const getLeadTypeColor = (type: string) => {
     switch (type) {
-      case 'hot': return '#ef4444';
-      case 'urgent': return '#f59e0b';
-      default: return '#3b82f6';
+      case 'hot': return Colors.status.error;
+      case 'urgent': return Colors.status.warning;
+      default: return Colors.primary;
     }
   };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -219,7 +260,7 @@ export default function AllocatedLeadsScreen() {
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <View style={styles.iconContainer}>
-            <ArrowLeft size={24} color="#1a1a1a" />
+            <ArrowLeft size={24} color={Colors.text.primary} />
           </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Allocated Leads</Text>
@@ -245,7 +286,7 @@ export default function AllocatedLeadsScreen() {
                 <View style={styles.detailRow}>
                   <View style={styles.detailRowContent}>
                     <View style={styles.iconContainer}>
-                      <MapPin size={16} color="#666" />
+                      <MapPin size={16} color={Colors.text.secondary} />
                     </View>
                     <Text style={styles.detailText}>{lead.place}</Text>
                   </View>
@@ -253,7 +294,7 @@ export default function AllocatedLeadsScreen() {
                 <View style={styles.detailRow}>
                   <View style={styles.detailRowContent}>
                     <View style={styles.iconContainer}>
-                      <Users size={16} color="#666" />
+                      <Users size={16} color={Colors.text.secondary} />
                     </View>
                     <Text style={styles.detailText}>{lead.no_of_pax} Pax</Text>
                   </View>
@@ -261,7 +302,7 @@ export default function AllocatedLeadsScreen() {
                 <View style={styles.detailRow}>
                   <View style={styles.detailRowContent}>
                     <View style={styles.iconContainer}>
-                      <Calendar size={16} color="#666" />
+                      <Calendar size={16} color={Colors.text.secondary} />
                     </View>
                     <Text style={styles.detailText}>
                       {lead.travel_date || lead.travel_month || 'Date TBD'}
@@ -271,7 +312,7 @@ export default function AllocatedLeadsScreen() {
                 <View style={styles.detailRow}>
                   <View style={styles.detailRowContent}>
                     <View style={styles.iconContainer}>
-                      <DollarSign size={16} color="#666" />
+                      <DollarSign size={16} color={Colors.text.secondary} />
                     </View>
                     <Text style={styles.detailText}>₹{lead.expected_budget}</Text>
                   </View>
@@ -293,7 +334,7 @@ export default function AllocatedLeadsScreen() {
                 >
                   <View style={styles.buttonContent}>
                     <View style={styles.iconContainer}>
-                      <Phone size={20} color="#fff" />
+                      <Phone size={20} color={Colors.text.inverse} />
                     </View>
                     <Text style={[styles.actionButtonText, styles.actionButtonTextWithIcon]}>Call</Text>
                   </View>
@@ -305,7 +346,7 @@ export default function AllocatedLeadsScreen() {
                 >
                   <View style={styles.buttonContent}>
                     <View style={styles.iconContainer}>
-                      <MessageCircle size={20} color="#fff" />
+                      <MessageCircle size={20} color={Colors.text.inverse} />
                     </View>
                     <Text style={[styles.actionButtonText, styles.actionButtonTextWithIcon]}>WhatsApp</Text>
                   </View>
@@ -328,7 +369,7 @@ export default function AllocatedLeadsScreen() {
               <Text style={styles.modalTitle}>Add Follow-Up</Text>
               <TouchableOpacity onPress={handleCloseModal}>
                 <View style={styles.iconContainer}>
-                  <X size={24} color="#666" />
+                  <X size={24} color={Colors.text.primary} />
                 </View>
               </TouchableOpacity>
             </View>
@@ -351,7 +392,7 @@ export default function AllocatedLeadsScreen() {
                     {actionType ? actionTypes.find(a => a.value === actionType)?.label : 'Select action type'}
                   </Text>
                   <View style={styles.iconContainer}>
-                    <ChevronDown size={20} color="#666" />
+                    <ChevronDown size={20} color={Colors.text.secondary} />
                   </View>
                 </TouchableOpacity>
 
@@ -455,7 +496,7 @@ export default function AllocatedLeadsScreen() {
                       {deadReason || 'Select reason'}
                     </Text>
                     <View style={styles.iconContainer}>
-                      <ChevronDown size={20} color="#666" />
+                      <ChevronDown size={20} color={Colors.text.secondary} />
                     </View>
                   </TouchableOpacity>
 
@@ -520,7 +561,7 @@ export default function AllocatedLeadsScreen() {
                 }
               >
                 {saving ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={Colors.text.inverse} />
                 ) : (
                   <Text style={styles.saveButtonText}>Save</Text>
                 )}
@@ -536,37 +577,40 @@ export default function AllocatedLeadsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+    ...Layout.shadows.sm,
   },
   backButton: {
     padding: 4,
+    borderRadius: Layout.radius.full,
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   emptyContainer: {
     padding: 40,
@@ -574,18 +618,14 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   leadCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Layout.shadows.sm,
   },
   leadHeader: {
     flexDirection: 'row',
@@ -595,19 +635,19 @@ const styles = StyleSheet.create({
   },
   leadName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
     flex: 1,
   },
   typeBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: Layout.radius.sm,
   },
   typeBadgeText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   leadDetails: {
     gap: 8,
@@ -627,23 +667,23 @@ const styles = StyleSheet.create({
   },
   detailText: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   remarkContainer: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: Colors.surfaceHighlight,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: Layout.radius.md,
     marginBottom: 12,
   },
   remarkLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#666',
+    color: Colors.text.secondary,
     marginBottom: 4,
   },
   remarkText: {
     fontSize: 14,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   actionButtons: {
     flexDirection: 'row',
@@ -652,7 +692,7 @@ const styles = StyleSheet.create({
   actionButton: {
     flex: 1,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
   },
   buttonContent: {
     flexDirection: 'row',
@@ -661,13 +701,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   callButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: Colors.primary,
   },
   whatsappButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#25D366', // Brand color
   },
   actionButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -683,11 +723,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: Layout.spacing.xl,
     maxHeight: '85%',
+    ...Layout.shadows.lg,
   },
   modalScroll: {
     maxHeight: '60%',
@@ -700,50 +741,52 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   leadInfo: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.surfaceHighlight,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     marginBottom: 20,
   },
   leadInfoName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
   leadInfoDetail: {
     fontSize: 14,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   formGroup: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.text.secondary,
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     padding: 12,
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
+    backgroundColor: Colors.surface,
   },
   textArea: {
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     padding: 12,
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     minHeight: 100,
+    backgroundColor: Colors.surface,
   },
   modalActions: {
     flexDirection: 'row',
@@ -752,24 +795,27 @@ const styles = StyleSheet.create({
   modalButton: {
     flex: 1,
     padding: 16,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    ...Layout.shadows.sm,
   },
   cancelButton: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   cancelButtonText: {
-    color: '#666',
+    color: Colors.text.primary,
     fontSize: 16,
     fontWeight: '600',
   },
   saveButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: Colors.primary,
   },
   saveButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -778,51 +824,55 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    borderRadius: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
     padding: 12,
+    backgroundColor: Colors.surface,
   },
   pickerButtonText: {
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   placeholderText: {
-    color: '#999',
+    color: Colors.text.tertiary,
   },
   pickerOptions: {
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    borderRadius: 8,
-    backgroundColor: '#fff',
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    backgroundColor: Colors.surface,
     maxHeight: 200,
+    ...Layout.shadows.md,
   },
   pickerOption: {
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
+    borderBottomColor: Colors.border,
   },
   pickerOptionText: {
     fontSize: 16,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   dueAmountContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f0f9ff',
+    backgroundColor: Colors.surfaceHighlight,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: Layout.radius.lg,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   dueAmountLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: Colors.text.primary,
   },
   dueAmountValue: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#3b82f6',
+    fontWeight: '700',
+    color: Colors.status.error,
   },
 });

@@ -22,6 +22,7 @@ export default function ItinerarySender({
   const [itineraries, setItineraries] = useState<Itinerary[]>([]);
   const [filteredItineraries, setFilteredItineraries] = useState<Itinerary[]>([]);
   const [selectedItinerary, setSelectedItinerary] = useState<Itinerary | null>(null);
+  const [exchangeRate, setExchangeRate] = useState(83);
   const [searchText, setSearchText] = useState('');
   const [sendMethod, setSendMethod] = useState<'whatsapp' | 'manual' | null>(null);
   const [manualMessage, setManualMessage] = useState('');
@@ -29,7 +30,20 @@ export default function ItinerarySender({
 
   useEffect(() => {
     fetchItineraries();
+    fetchExchangeRate();
   }, []);
+
+  const fetchExchangeRate = async () => {
+    try {
+      const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+      const data = await response.json();
+      if (data.rates && data.rates.INR) {
+        setExchangeRate(data.rates.INR);
+      }
+    } catch (error) {
+      console.error('Error fetching exchange rate:', error);
+    }
+  };
 
   useEffect(() => {
     filterItineraries();
@@ -69,8 +83,7 @@ export default function ItinerarySender({
   };
 
   const generateWhatsAppMessage = (itinerary: Itinerary) => {
-    const exchangeRate = 83;
-    const inrAmount = Math.round(itinerary.cost_usd * exchangeRate);
+    const costINR = itinerary.cost_inr || Math.round(itinerary.cost_usd * (exchangeRate + 2));
 
     return `Hi ${guestName},
 
@@ -81,7 +94,7 @@ Duration: ${itinerary.days} Days
 
 Cost:
 USD $${itinerary.cost_usd.toFixed(2)}
-INR ₹${inrAmount}
+INR ₹${costINR}
 
 *Itinerary Overview:*
 ${itinerary.full_itinerary || 'Please contact us for detailed itinerary'}
@@ -131,6 +144,7 @@ Nomadller Solutions Team`;
         status: 'completed',
         update_type: 'itinerary_created',
         remark: `Itinerary "${selectedItinerary.name}" sent via WhatsApp`,
+        itinerary_id: selectedItinerary.id,
       });
 
       Alert.alert('Success', 'Itinerary sent successfully!');
@@ -162,6 +176,7 @@ Nomadller Solutions Team`;
         status: 'completed',
         update_type: 'itinerary_created',
         remark: `Itinerary "${selectedItinerary.name}" sent manually: ${manualMessage}`,
+        itinerary_id: selectedItinerary.id,
       });
 
       Alert.alert('Success', 'Message saved successfully!');

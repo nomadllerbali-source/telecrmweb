@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Modal } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Calendar } from 'lucide-react-native';
+import { Colors, Layout } from '@/constants/Colors';
 
 interface DateTimePickerProps {
   value: Date | null;
@@ -52,11 +53,11 @@ export default function DateTimePickerComponent({
   const formatDisplay = () => {
     if (!value) return placeholder;
     if (mode === 'date') {
-      return value.toISOString().split('T')[0];
+      return value.toLocaleDateString('en-GB');
     } else if (mode === 'time') {
-      return value.toTimeString().slice(0, 5);
+      return value.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } else {
-      return `${value.toISOString().split('T')[0]} ${value.toTimeString().slice(0, 5)}`;
+      return `${value.toLocaleDateString('en-GB')} ${value.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     }
   };
 
@@ -66,10 +67,10 @@ export default function DateTimePickerComponent({
 
       {Platform.OS === 'web' ? (
         <View style={styles.webInputContainer}>
-          <Calendar size={20} color="#666" />
+          <Calendar size={18} color={Colors.primary} />
           <input
             type={mode === 'time' ? 'time' : 'date'}
-            value={formatDisplay()}
+            value={value ? (mode === 'time' ? value.toTimeString().slice(0, 5) : value.toISOString().split('T')[0]) : ''}
             onChange={(e) => {
               if (e.target.value) {
                 if (mode === 'time') {
@@ -97,8 +98,8 @@ export default function DateTimePickerComponent({
             }
           }}
         >
-          <Calendar size={20} color="#0066cc" />
-          <Text style={styles.buttonText}>{formatDisplay()}</Text>
+          <Calendar size={18} color={Colors.primary} />
+          <Text style={[styles.buttonText, !value && styles.placeholderText]}>{formatDisplay()}</Text>
         </TouchableOpacity>
       )}
 
@@ -106,8 +107,9 @@ export default function DateTimePickerComponent({
         <DateTimePicker
           value={value || new Date()}
           mode="date"
-          display="spinner"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
           onChange={handleDateChange}
+          themeVariant="dark"
         />
       )}
 
@@ -115,8 +117,9 @@ export default function DateTimePickerComponent({
         <DateTimePicker
           value={value || new Date()}
           mode="time"
-          display="spinner"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
           onChange={handleTimeChange}
+          themeVariant="dark"
         />
       )}
     </View>
@@ -128,44 +131,50 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.text.secondary,
     marginBottom: 8,
+    marginLeft: 4,
   },
   button: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
-    gap: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    backgroundColor: Colors.background,
+    gap: 10,
   },
   buttonText: {
-    fontSize: 14,
-    color: '#333',
+    fontSize: 15,
+    color: Colors.text.primary,
+    fontWeight: '600',
     flex: 1,
+  },
+  placeholderText: {
+    color: Colors.text.tertiary,
   },
   webInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
-    gap: 8,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    backgroundColor: Colors.background,
+    gap: 10,
   },
   webInput: {
     flex: 1,
-    fontSize: 14,
-    paddingVertical: 4,
-    border: 'none',
+    fontSize: 15,
+    borderWidth: 0,
     backgroundColor: 'transparent',
-    color: '#333',
+    color: Colors.text.primary,
+    fontWeight: '600',
+    outlineStyle: 'none',
   } as any,
 });

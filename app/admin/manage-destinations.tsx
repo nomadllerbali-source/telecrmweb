@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase, setUserContext } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { ArrowLeft, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, Trash2, MapPin, Globe, Plus, EyeOff, Eye } from 'lucide-react-native';
+import { Colors, Layout } from '@/constants/Colors';
 
 interface Destination {
   id: string;
@@ -90,7 +91,7 @@ export default function ManageDestinationsScreen() {
       [
         {
           text: 'Cancel',
-          onPress: () => {},
+          onPress: () => { },
           style: 'cancel',
         },
         {
@@ -144,84 +145,138 @@ export default function ManageDestinationsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#1a1a1a" />
+          <View style={styles.iconButton}>
+            <ArrowLeft size={24} color={Colors.text.primary} />
+          </View>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Manage Destinations</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Tour Destinations</Text>
+          <Text style={styles.headerSubtitle}>Manage your catalog</Text>
+        </View>
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Add New Destination</Text>
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.sectionIconBg}>
+              <Plus size={20} color={Colors.primary} />
+            </View>
+            <Text style={styles.sectionTitle}>Add New Destination</Text>
+          </View>
 
-          <Text style={styles.label}>Destination Name *</Text>
-          <TextInput
-            style={styles.input}
-            value={destinationName}
-            onChangeText={setDestinationName}
-            placeholder="Enter destination name (e.g., Paris, Tokyo)"
-            returnKeyType="done"
-            autoCapitalize="words"
-          />
+          <View style={styles.inputWrapper}>
+            <Text style={styles.label}>Destination Name</Text>
+            <View style={styles.inputContainer}>
+              <MapPin size={18} color={Colors.text.tertiary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                value={destinationName}
+                onChangeText={setDestinationName}
+                placeholder="e.g. Lakshadweep, Goa"
+                placeholderTextColor={Colors.text.tertiary}
+                returnKeyType="done"
+                autoCapitalize="words"
+              />
+            </View>
+          </View>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button, (!destinationName.trim() || loading) && styles.buttonDisabled]}
             onPress={handleAddDestination}
-            disabled={loading}
+            disabled={!destinationName.trim() || loading}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={Colors.text.inverse} />
             ) : (
-              <Text style={styles.buttonText}>Add Destination</Text>
+              <View style={styles.buttonContent}>
+                <Plus size={18} color={Colors.text.inverse} />
+                <Text style={styles.buttonText}>Publish Destination</Text>
+              </View>
             )}
           </TouchableOpacity>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            Existing Destinations ({destinations.length})
-          </Text>
+        <View style={styles.listSection}>
+          <View style={styles.listHeaderRow}>
+            <Text style={styles.listTitle}>Published Destinations</Text>
+            <View style={styles.countBadge}>
+              <Text style={styles.countBadgeText}>{destinations.length}</Text>
+            </View>
+          </View>
+
           {destinations.length === 0 ? (
-            <Text style={styles.emptyText}>No destinations added yet</Text>
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconBg}>
+                <Globe size={48} color={Colors.surfaceHighlight} />
+              </View>
+              <Text style={styles.emptyText}>No destinations added yet</Text>
+              <Text style={styles.emptySubtext}>Add your first tour destination above</Text>
+            </View>
           ) : (
             destinations.map((destination) => (
               <View key={destination.id} style={styles.destinationCard}>
-                <TouchableOpacity
-                  style={styles.destinationInfo}
-                  onPress={() => handleToggleActive(destination.id, destination.is_active)}
-                >
-                  <View style={styles.destinationContent}>
-                    <Text style={styles.destinationName}>{destination.name}</Text>
-                    <View style={styles.statusBadge}>
+                <View style={styles.destinationIcon}>
+                  <MapPin size={22} color={Colors.primary} />
+                </View>
+                <View style={styles.destinationInfo}>
+                  <Text style={styles.destinationName}>{destination.name}</Text>
+                  <View style={styles.statusRow}>
+                    <TouchableOpacity
+                      onPress={() => handleToggleActive(destination.id, destination.is_active)}
+                      style={[
+                        styles.statusBadge,
+                        { backgroundColor: destination.is_active ? Colors.status.success + '15' : Colors.status.warning + '15' }
+                      ]}
+                    >
                       <View
                         style={[
                           styles.statusDot,
-                          destination.is_active ? styles.statusActive : styles.statusInactive,
+                          { backgroundColor: destination.is_active ? Colors.status.success : Colors.status.warning }
                         ]}
                       />
-                      <Text style={styles.statusText}>
-                        {destination.is_active ? 'Active' : 'Inactive'}
+                      <Text style={[
+                        styles.statusText,
+                        { color: destination.is_active ? Colors.status.success : Colors.status.warning }
+                      ]}>
+                        {destination.is_active ? 'Active' : 'Hidden'}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
+                    <Text style={styles.dateText}>Added {new Date(destination.created_at).toLocaleDateString()}</Text>
                   </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.deleteButton}
-                  onPress={() => handleDeleteDestination(destination.id, destination.name)}
-                  disabled={deleting === destination.id}
-                >
-                  {deleting === destination.id ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Trash2 size={18} color="#fff" />
-                  )}
-                </TouchableOpacity>
+                </View>
+
+                <View style={styles.cardActions}>
+                  <TouchableOpacity
+                    onPress={() => handleToggleActive(destination.id, destination.is_active)}
+                    style={styles.actionButton}
+                  >
+                    {destination.is_active ? (
+                      <EyeOff size={18} color={Colors.text.secondary} />
+                    ) : (
+                      <Eye size={18} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                  <View style={styles.actionDivider} />
+                  <TouchableOpacity
+                    style={styles.deleteIconButton}
+                    onPress={() => handleDeleteDestination(destination.id, destination.name)}
+                    disabled={deleting === destination.id}
+                  >
+                    {deleting === destination.id ? (
+                      <ActivityIndicator color={Colors.status.error} size="small" />
+                    ) : (
+                      <Trash2 size={18} color={Colors.status.error} />
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             ))
           )}
         </View>
+        <View style={styles.spacer} />
       </ScrollView>
     </View>
   );
@@ -230,137 +285,278 @@ export default function ManageDestinationsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+  },
+  headerContent: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginTop: 2,
+    fontWeight: '500',
   },
   backButton: {
-    padding: 4,
+    marginLeft: -Layout.spacing.sm,
+  },
+  iconButton: {
+    padding: 8,
+    borderRadius: Layout.radius.full,
+    backgroundColor: Colors.background,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   section: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
+    marginBottom: Layout.spacing.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Layout.shadows.md,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 24,
+  },
+  sectionIconBg: {
+    width: 36,
+    height: 36,
+    borderRadius: Layout.radius.md,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 16,
+    fontWeight: '800',
+    color: Colors.text.primary,
+    letterSpacing: -0.2,
+  },
+  inputWrapper: {
+    marginBottom: 20,
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.secondary,
     marginBottom: 8,
+    marginLeft: 4,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Layout.radius.lg,
+    paddingHorizontal: 12,
+  },
+  inputIcon: {
+    marginRight: 8,
   },
   input: {
-    backgroundColor: '#fafafa',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    flex: 1,
+    paddingVertical: 14,
     fontSize: 16,
-    marginBottom: 12,
+    color: Colors.text.primary,
+    fontWeight: '500',
   },
   button: {
-    backgroundColor: '#3b82f6',
-    height: 48,
-    borderRadius: 8,
+    backgroundColor: Colors.primary,
+    height: 56,
+    borderRadius: Layout.radius.xl,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
+    ...Layout.shadows.md,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   buttonDisabled: {
-    backgroundColor: '#93c5fd',
+    backgroundColor: Colors.surfaceHighlight,
+    opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   errorText: {
-    color: '#dc2626',
-    fontSize: 14,
-    marginTop: 8,
-    marginBottom: 8,
+    color: Colors.status.error,
+    fontSize: 13,
+    marginTop: -8,
+    marginBottom: 16,
     textAlign: 'center',
+    fontWeight: '600',
+  },
+  listSection: {
+    marginTop: 8,
+  },
+  listHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  listTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: Colors.text.secondary,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+  },
+  countBadge: {
+    backgroundColor: Colors.surfaceHighlight,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: Layout.radius.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  countBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.primary,
   },
   destinationCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    backgroundColor: Colors.surface,
+    padding: Layout.spacing.md,
+    borderRadius: Layout.radius.xl,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Layout.shadows.md,
+  },
+  destinationIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: Layout.radius.lg,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   destinationInfo: {
     flex: 1,
   },
-  destinationContent: {
-    flex: 1,
-  },
   destinationName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontSize: 17,
+    fontWeight: '800',
+    color: Colors.text.primary,
     marginBottom: 4,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Layout.radius.sm,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     marginRight: 6,
   },
-  statusActive: {
-    backgroundColor: '#10b981',
-  },
-  statusInactive: {
-    backgroundColor: '#ef4444',
-  },
   statusText: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  dateText: {
+    fontSize: 11,
+    color: Colors.text.tertiary,
     fontWeight: '500',
   },
-  deleteButton: {
-    backgroundColor: '#dc2626',
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderRadius: Layout.radius.lg,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  actionButton: {
+    padding: 8,
+    borderRadius: Layout.radius.md,
+  },
+  actionDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: Colors.border,
+    marginHorizontal: 2,
+  },
+  deleteIconButton: {
+    padding: 8,
+    borderRadius: Layout.radius.md,
+  },
+  emptyContainer: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+  },
+  emptyIconBg: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.background,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+    marginBottom: 20,
   },
   emptyText: {
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-    paddingVertical: 20,
+    fontSize: 16,
+    fontWeight: '800',
+    color: Colors.text.primary,
+    marginBottom: 4,
   },
+  emptySubtext: {
+    fontSize: 13,
+    color: Colors.text.tertiary,
+    fontWeight: '500',
+  },
+  spacer: {
+    height: 60,
+  }
 });

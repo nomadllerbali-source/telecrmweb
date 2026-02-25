@@ -1,25 +1,29 @@
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Linking, Modal, TextInput, AppState, AppStateStatus, Alert } from 'react-native';
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'expo-router';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { Lead } from '@/types';
-import { ArrowLeft, Calendar, Clock, Phone, MessageCircle, X, ChevronDown, Plus, History } from 'lucide-react-native';
+import { Lead, Itinerary } from '@/types';
+import { ArrowLeft, Calendar, Clock, Phone, MessageCircle, X, ChevronDown, Plus, History, Package, Edit } from 'lucide-react-native';
 import DateTimePickerComponent from '@/components/DateTimePicker';
 import { calendarService } from '@/services/calendar';
-import { scheduleFollowUpNotification } from '@/services/notifications';
+import { scheduleFollowUpNotification } from '../../services/notifications';
+import { syncAdvancePaymentToFinance } from '@/services/financeSync';
+import { Colors, Layout } from '@/constants/Colors';
 
 interface FollowUpWithLead {
   id: string;
   follow_up_date: string;
   status: string;
   remark: string;
+  itinerary_id: string | null;
   lead: {
     id: string;
     client_name: string;
     place: string;
     no_of_pax: number;
     contact_number: string | null;
+    assigned_by: string | null;
   };
 }
 
@@ -54,14 +58,24 @@ export default function FollowUpsScreen() {
   const [remark, setRemark] = useState('');
   const [nextFollowUpDate, setNextFollowUpDate] = useState(new Date());
   const [nextFollowUpTime, setNextFollowUpTime] = useState(new Date());
-  const [itineraryId, setItineraryId] = useState('');
+  const [itineraryId, setItineraryId] = useState<string | null>(null);
   const [totalAmount, setTotalAmount] = useState('');
   const [advanceAmount, setAdvanceAmount] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [deadReason, setDeadReason] = useState('');
   const [showDeadReasonPicker, setShowDeadReasonPicker] = useState(false);
   const [travelDate, setTravelDate] = useState<Date | null>(null);
+  const [itineraryLoading, setItineraryLoading] = useState(false);
   const [reminderTime, setReminderTime] = useState<Date | null>(null);
+  const [showItineraryModal, setShowItineraryModal] = useState(false);
+  const [selectedItinerary, setSelectedItinerary] = useState<Itinerary | null>(null);
+  const [availableItineraries, setAvailableItineraries] = useState<Itinerary[]>([]);
+  const [showItineraryPicker, setShowItineraryPicker] = useState(false);
+  const [itinerarySearchQuery, setItinerarySearchQuery] = useState('');
+  const [filterDays, setFilterDays] = useState('');
+  const [filterPax, setFilterPax] = useState('');
+  const [filterTransport, setFilterTransport] = useState('');
+  const [fetchingItinerary, setFetchingItinerary] = useState(false);
   const [saving, setSaving] = useState(false);
   const appState = useRef(AppState.currentState);
   const callInitiatedRef = useRef(false);
@@ -86,15 +100,17 @@ export default function FollowUpsScreen() {
     'Other',
   ];
 
-  useEffect(() => {
-    fetchFollowUps();
+  useFocusEffect(
+    useCallback(() => {
+      fetchFollowUps();
 
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
+      const subscription = AppState.addEventListener('change', handleAppStateChange);
 
-    return () => {
-      subscription.remove();
-    };
-  }, [showTodayOnly]);
+      return () => {
+        subscription.remove();
+      };
+    }, [showTodayOnly, user])
+  );
 
   const handleAppStateChange = (nextAppState: AppStateStatus) => {
     if (
@@ -112,14 +128,20 @@ export default function FollowUpsScreen() {
   };
 
   const fetchFollowUps = async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+
     try {
+      console.log('Fetching follow-ups for user:', user.id);
       let query = supabase
         .from('follow_ups')
         .select(`
           *,
-          lead:leads(id, client_name, place, no_of_pax, contact_number)
+          lead:leads(id, client_name, place, no_of_pax, contact_number, assigned_by)
         `)
-        .eq('sales_person_id', user?.id)
+        .eq('sales_person_id', user.id)
         .eq('status', 'pending')
         .order('follow_up_date', { ascending: true });
 
@@ -131,11 +153,106 @@ export default function FollowUpsScreen() {
       const { data, error } = await query;
 
       if (error) throw error;
-      setFollowUps(data || []);
+
+      let enrichedData = data || [];
+      console.log('Raw follow-ups count:', enrichedData.length);
+
+      if (enrichedData.length > 0) {
+        const leadIds = enrichedData.map(f => f.lead.id);
+        // Get the latest itinerary_id for each lead in the list
+        const { data: latestItineraries } = await supabase
+          .from('follow_ups')
+          .select('lead_id, itinerary_id, created_at')
+          .in('lead_id', leadIds)
+          .not('itinerary_id', 'is', null)
+          .order('created_at', { ascending: false });
+
+        console.log('Latest itineraries found:', latestItineraries?.length);
+
+        if (latestItineraries && latestItineraries.length > 0) {
+          enrichedData = enrichedData.map(followUp => {
+            // Find the most recent itinerary_id for this lead
+            const leadId = followUp.lead?.id || (followUp as any).lead_id;
+            const latest = latestItineraries.find(li => String(li.lead_id) === String(leadId));
+
+            if (latest && latest.itinerary_id && !followUp.itinerary_id) {
+              console.log(`Enriching lead ${leadId} with itinerary ${latest.itinerary_id}`);
+              return { ...followUp, itinerary_id: latest.itinerary_id };
+            }
+            return followUp;
+          });
+        }
+      }
+
+      setFollowUps(enrichedData);
     } catch (err: any) {
       console.error('Error fetching follow-ups:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCardPress = async (followUp: FollowUpWithLead) => {
+    console.log('Card pressed:', followUp.id);
+    console.log('Linked Itinerary ID:', followUp.itinerary_id);
+    setCurrentLead(followUp.lead);
+
+    if (followUp.itinerary_id) {
+      setFetchingItinerary(true);
+      setShowItineraryModal(true);
+      try {
+        console.log('Fetching itinerary details for:', followUp.itinerary_id);
+        const { data, error } = await supabase
+          .from('itineraries')
+          .select('*')
+          .eq('id', followUp.itinerary_id)
+          .single();
+
+        if (error) {
+          console.error('Supabase error fetching itinerary:', error);
+          throw error;
+        }
+        console.log('Itinerary data fetched:', data ? 'Found' : 'Null');
+        setSelectedItinerary(data);
+      } catch (err: any) {
+        console.error('Error fetching itinerary:', err);
+        // Don't show error alert, just log. We can still show lead details.
+        setSelectedItinerary(null);
+      } finally {
+        setFetchingItinerary(false);
+      }
+    } else {
+      console.log('No itinerary_id on this follow-up');
+      setSelectedItinerary(null);
+      setShowItineraryModal(true);
+    }
+  };
+
+  const handleEditItinerary = (itineraryId: string) => {
+    setShowItineraryModal(false);
+    router.push({
+      pathname: '/sales/saved-itinerary',
+      params: { editId: itineraryId }
+    });
+  };
+
+  const handleViewItinerary = async (itineraryId: string) => {
+    setFetchingItinerary(true);
+    setShowItineraryModal(true);
+    try {
+      const { data, error } = await supabase
+        .from('itineraries')
+        .select('*')
+        .eq('id', itineraryId)
+        .single();
+
+      if (error) throw error;
+      setSelectedItinerary(data);
+    } catch (err) {
+      console.error('Error fetching itinerary:', err);
+      setSelectedItinerary(null);
+    } finally {
+      setFetchingItinerary(false);
     }
   };
 
@@ -179,7 +296,60 @@ export default function FollowUpsScreen() {
     }
   };
 
-  const handleAddNewFollowUp = () => {
+  const handleAddNewFollowUp = async (lead?: Lead) => {
+    // If a lead is passed, use it; otherwise fallback to currentLead
+    const targetLead = lead || currentLead;
+    if (lead) {
+      setCurrentLead(lead);
+    }
+
+    setNextFollowUpDate(new Date());
+    setNextFollowUpTime(new Date());
+    setRemark('');
+    setActionType('follow_up');
+
+    // Fetch available itineraries for selection
+    try {
+      const { data: itinerariesData, error: itinerariesError } = await supabase
+        .from('itineraries')
+        .select('id, name, days, no_of_pax, mode_of_transport')
+        .order('created_at', { ascending: false });
+
+      if (!itinerariesError && itinerariesData) {
+        // @ts-ignore
+        setAvailableItineraries(itinerariesData);
+      }
+    } catch (err) {
+      console.log('Error fetching itineraries list:', err);
+    }
+
+    // Fetch latest itinerary for the target lead to pre-fill context
+    if (targetLead?.id) {
+      try {
+        console.log('Fetching latest itinerary for lead:', targetLead.id);
+        const { data, error } = await supabase
+          .from('follow_ups')
+          .select('itinerary_id')
+          .eq('lead_id', targetLead.id)
+          .not('itinerary_id', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (data && data.itinerary_id) {
+          console.log('Found previous itinerary ID:', data.itinerary_id);
+          setItineraryId(data.itinerary_id);
+        } else {
+          console.log('No previous itinerary ID found');
+          // Reset to null if none found, to avoid carrying over from previous state
+          setItineraryId(null);
+        }
+      } catch (err) {
+        console.log('Error fetching previous itinerary:', err);
+        setItineraryId(null);
+      }
+    }
+
     setShowHistoryModal(false);
     setShowFollowUpModal(true);
   };
@@ -227,6 +397,7 @@ export default function FollowUpsScreen() {
         follow_up_note: remark.trim(),
         follow_up_date: new Date().toISOString(),
         status: 'completed',
+        itinerary_id: itineraryId || null,
       };
 
       if (['itinerary_sent', 'itinerary_updated', 'follow_up'].includes(actionType)) {
@@ -336,6 +507,41 @@ This is a 7-day advance reminder for the travel date.`;
           console.error('Error creating reminder:', reminderError);
           // Don't fail the entire operation if reminder fails
         }
+
+        // 🆕 Sync advance payment to Finance Tracker
+        console.log('🚀 ATTEMPTING FINANCE SYNC - Action Type:', actionType);
+        console.log('🚀 User Email:', user?.email);
+        console.log('🚀 Advance Amount:', advanceAmount);
+
+        try {
+          const syncResult = await syncAdvancePaymentToFinance({
+            leadName: currentLead.client_name,
+            advanceAmount: parseFloat(advanceAmount),
+            totalAmount: parseFloat(totalAmount),
+            dueAmount: calculateDueAmount(),
+            salesPersonId: user.id,
+            salesPersonEmail: user.email,
+            salesPersonName: user.full_name,
+            transactionId: transactionId || 'N/A',
+            place: currentLead.place,
+            pax: currentLead.no_of_pax,
+            phoneNumber: currentLead.contact_number,
+            travelDate: travelDate ? travelDate.toISOString().split('T')[0] : null,
+            crmLeadId: currentLead.id
+          });
+
+          if (syncResult.success) {
+            console.log('✅ Advance payment synced to Finance Tracker');
+            // Success alert for debugging
+            Alert.alert('Finance Sync', 'Successfully synced booking to Finance Tracker!');
+          } else {
+            console.warn('⚠️ Failed to sync to Finance Tracker:', syncResult.error);
+            Alert.alert('Finance Sync Error', 'Lead confirmed, but failed to sync to Finance Tracker: ' + syncResult.error);
+          }
+        } catch (financeError: any) {
+          console.error('❌ Error syncing to Finance Tracker:', financeError);
+          Alert.alert('Finance Sync Critical Error', 'Failed to connect to Finance Tracker: ' + financeError.message);
+        }
       }
 
       handleCloseModal();
@@ -384,7 +590,7 @@ This is a 7-day advance reminder for the travel date.`;
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#f59e0b" />
+        <ActivityIndicator size="large" color={Colors.accent} />
       </View>
     );
   }
@@ -392,35 +598,37 @@ This is a 7-day advance reminder for the travel date.`;
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <View style={styles.iconContainer}>
-            <ArrowLeft size={24} color="#1a1a1a" />
-          </View>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Follow Ups</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerTop}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <View style={styles.iconContainer}>
+              <ArrowLeft size={24} color={Colors.text.inverse} />
+            </View>
+          </TouchableOpacity>
+          <Text style={styles.title}>Follow Ups</Text>
+          <View style={{ width: 24 }} />
+        </View>
       </View>
 
-      <View style={styles.filterContainer}>
+      <View style={styles.tabsContainer}>
         <TouchableOpacity
-          style={[styles.filterButton, !showTodayOnly && styles.filterButtonActive]}
+          style={[styles.tab, !showTodayOnly && styles.activeTab]}
           onPress={() => setShowTodayOnly(false)}
         >
-          <Text style={[styles.filterButtonText, !showTodayOnly && styles.filterButtonTextActive]}>
+          <Text style={[styles.tabText, !showTodayOnly && styles.activeTabText]}>
             All
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.filterButton, showTodayOnly && styles.filterButtonActive]}
+          style={[styles.tab, showTodayOnly && styles.activeTab]}
           onPress={() => setShowTodayOnly(true)}
         >
-          <Text style={[styles.filterButtonText, showTodayOnly && styles.filterButtonTextActive]}>
+          <Text style={[styles.tabText, showTodayOnly && styles.activeTabText]}>
             Today
           </Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView style={styles.listContent} contentContainerStyle={styles.contentContainer}>
         {followUps.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No follow-ups scheduled</Text>
@@ -429,36 +637,26 @@ This is a 7-day advance reminder for the travel date.`;
           followUps.map((followUp) => {
             const { date, time } = formatDateTime(followUp.follow_up_date);
             return (
-              <View
+              <TouchableOpacity
                 key={followUp.id}
-                style={styles.followUpCard}
+                style={styles.card}
+                onPress={() => handleCardPress(followUp)}
+                activeOpacity={0.7}
               >
-                <View style={styles.followUpHeader}>
-                  <Text style={styles.leadName}>{followUp.lead.client_name}</Text>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.clientName}>{followUp.lead.client_name}</Text>
                 </View>
 
-                <View style={styles.followUpDetails}>
+                <View style={styles.cardBody}>
                   <Text style={styles.leadDetail}>
                     {followUp.lead.place} - {followUp.lead.no_of_pax} Pax
                   </Text>
 
-                  <View style={styles.dateTimeRow}>
-                    <View style={styles.dateTimeItem}>
-                      <View style={styles.dateTimeContent}>
-                        <View style={styles.iconContainer}>
-                          <Calendar size={14} color="#666" />
-                        </View>
-                        <Text style={styles.dateTimeText}>{date}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.dateTimeItem}>
-                      <View style={styles.dateTimeContent}>
-                        <View style={styles.iconContainer}>
-                          <Clock size={14} color="#666" />
-                        </View>
-                        <Text style={styles.dateTimeText}>{time}</Text>
-                      </View>
-                    </View>
+                  <View style={styles.infoRow}>
+                    <Calendar size={14} color={Colors.text.secondary} />
+                    <Text style={styles.infoText}>{date}</Text>
+                    <Clock size={14} color={Colors.text.secondary} style={{ marginLeft: 8 }} />
+                    <Text style={styles.infoText}>{time}</Text>
                   </View>
 
                   {followUp.remark && (
@@ -468,41 +666,32 @@ This is a 7-day advance reminder for the travel date.`;
                   )}
                 </View>
 
-                <View style={styles.cardActionButtons}>
+                <View style={styles.cardFooter}>
                   <TouchableOpacity
-                    style={styles.cardActionButton}
+                    style={[styles.actionButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.border }]}
                     onPress={() => handleFollowUp(followUp)}
                   >
-                    <View style={styles.buttonIconContainer}>
-                      <History size={16} color="#3b82f6" />
-                    </View>
-                    <Text style={styles.cardActionButtonText}>History</Text>
+                    <History size={16} color={Colors.primary} />
+                    <Text style={[styles.actionButtonText, { color: Colors.primary }]}>History</Text>
                   </TouchableOpacity>
+
                   {followUp.lead.contact_number && (
                     <TouchableOpacity
-                      style={styles.cardActionButton}
+                      style={[styles.actionButton, styles.whatsAppButton]}
                       onPress={() => handleWhatsApp(followUp.lead.contact_number!, followUp.lead.client_name, followUp.lead.place)}
                     >
-                      <View style={styles.buttonIconContainer}>
-                        <MessageCircle size={16} color="#25D366" />
-                      </View>
-                      <Text style={styles.cardActionButtonText}>WhatsApp</Text>
+                      <MessageCircle size={16} color={Colors.text.inverse} />
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity
-                    style={styles.cardActionButton}
-                    onPress={() => {
-                      setCurrentLead(followUp.lead);
-                      setShowFollowUpModal(true);
-                    }}
+                    style={[styles.actionButton, styles.followUpButton]}
+                    onPress={() => handleAddNewFollowUp(followUp.lead as any)}
                   >
-                    <View style={styles.buttonIconContainer}>
-                      <Plus size={16} color="#10b981" />
-                    </View>
-                    <Text style={styles.cardActionButtonText}>New Follow-Up</Text>
+                    <Plus size={16} color={Colors.text.inverse} />
+                    <Text style={styles.actionButtonText}>Follow-Up</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })
         )}
@@ -514,134 +703,69 @@ This is a 7-day advance reminder for the travel date.`;
         transparent={true}
         onRequestClose={handleCloseHistoryModal}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Follow-Up History</Text>
               <TouchableOpacity onPress={handleCloseHistoryModal}>
-                <View style={styles.iconContainer}>
-                  <X size={24} color="#666" />
-                </View>
+                <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
 
             {currentLead && (
-              <View style={styles.leadInfo}>
-                <View style={styles.leadInfoHeader}>
-                  <View style={styles.leadInfoText}>
-                    <Text style={styles.leadInfoName}>{currentLead.client_name}</Text>
-                    <Text style={styles.leadInfoDetail}>{currentLead.place} • {currentLead.no_of_pax} Pax</Text>
-                    {currentLead.contact_number && (
-                      <Text style={styles.leadInfoContact}>{currentLead.contact_number}</Text>
-                    )}
-                  </View>
-                  {currentLead.contact_number && (
-                    <View style={styles.leadInfoActions}>
-                      <TouchableOpacity
-                        style={styles.leadInfoActionButton}
-                        onPress={() => handleCall(currentLead.contact_number, currentLead)}
-                      >
-                        <Phone size={18} color="#fff" />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.leadInfoActionButton, styles.whatsappButton]}
-                        onPress={() => handleWhatsApp(currentLead.contact_number, currentLead.client_name, currentLead.place)}
-                      >
-                        <MessageCircle size={18} color="#fff" />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
+              <View style={[styles.leadInfoContainer, { marginBottom: 16 }]}>
+                <Text style={styles.clientName}>{currentLead.client_name}</Text>
+                <Text style={styles.leadDetail}>{currentLead.place} • {currentLead.no_of_pax} Pax</Text>
               </View>
             )}
 
             <TouchableOpacity
-              style={styles.addFollowUpButton}
-              onPress={handleAddNewFollowUp}
+              style={[styles.saveButton, { marginBottom: 16, marginTop: 0 }]}
+              onPress={() => handleAddNewFollowUp()}
             >
-              <View style={styles.buttonContent}>
-                <View style={styles.iconContainer}>
-                  <Plus size={20} color="#fff" />
-                </View>
-                <Text style={styles.addFollowUpButtonText}>Add New Follow-Up</Text>
-              </View>
+              <Plus size={20} color={Colors.text.inverse} style={{ marginRight: 8 }} />
+              <Text style={styles.saveButtonText}>Add New Follow-Up</Text>
             </TouchableOpacity>
 
-            <ScrollView style={styles.historyScroll} contentContainerStyle={styles.historyScrollContent} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ maxHeight: 400 }} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
               {historyLoading ? (
                 <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color="#3b82f6" />
+                  <ActivityIndicator size="large" color={Colors.primary} />
                 </View>
               ) : followUpHistory.length === 0 ? (
-                <View style={styles.emptyHistoryContainer}>
-                  <View style={styles.iconContainer}>
-                    <History size={48} color="#ccc" />
-                  </View>
-                  <Text style={styles.emptyHistoryText}>No follow-up history</Text>
+                <View style={styles.emptyContainer}>
+                  <History size={48} color={Colors.text.tertiary} />
+                  <Text style={styles.emptyText}>No follow-up history</Text>
                 </View>
               ) : (
                 followUpHistory.map((history) => (
-                  <View key={history.id} style={styles.historyCard}>
-                    <View style={styles.historyHeader}>
-                      <Text style={styles.historyActionType}>{getActionTypeLabel(history.action_type)}</Text>
-                      <Text style={styles.historyDate}>{formatHistoryDate(history.created_at)}</Text>
+                  <View key={history.id} style={[styles.card, { borderLeftWidth: 1, borderLeftColor: Colors.border }]}>
+                    <View style={styles.cardHeader}>
+                      <Text style={[styles.clientName, { fontSize: 16 }]}>{getActionTypeLabel(history.action_type)}</Text>
+                      {history.itinerary_id && (
+                        <TouchableOpacity
+                          onPress={() => handleViewItinerary(history.itinerary_id!)}
+                          style={{ flexDirection: 'row', alignItems: 'center' }}
+                        >
+                          <Package size={14} color={Colors.accent} />
+                          <Text style={{ color: Colors.accent, fontSize: 13, fontWeight: '600', marginLeft: 4 }}>View Itinerary</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
+                    <Text style={[styles.infoText, { fontSize: 12, marginBottom: 8 }]}>{formatHistoryDate(history.created_at)}</Text>
 
                     {history.follow_up_note && (
-                      <View style={styles.historyNote}>
-                        <Text style={styles.historyNoteLabel}>Note:</Text>
-                        <Text style={styles.historyNoteText}>{history.follow_up_note}</Text>
+                      <View style={styles.remarkContainer}>
+                        <Text style={styles.remarkText}>{history.follow_up_note}</Text>
                       </View>
                     )}
 
                     {history.next_follow_up_date && (
-                      <View style={styles.historyDetail}>
-                        <View style={styles.historyDetailRow}>
-                          <View style={styles.iconContainer}>
-                            <Calendar size={14} color="#666" />
-                          </View>
-                          <Text style={styles.historyDetailText}>
-                            {`Next Follow-Up: ${new Date(history.next_follow_up_date).toLocaleDateString()}${history.next_follow_up_time ? ` at ${history.next_follow_up_time.slice(0, 5)}` : ''}`}
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-
-                    {history.itinerary_id && (
-                      <View style={styles.historyDetail}>
-                        <Text style={styles.historyDetailLabel}>Itinerary ID:</Text>
-                        <Text style={styles.historyDetailValue}>{history.itinerary_id}</Text>
-                      </View>
-                    )}
-
-                    {history.total_amount && (
-                      <View style={styles.historyAmounts}>
-                        <View style={styles.historyAmountRow}>
-                          <Text style={styles.historyAmountLabel}>Total:</Text>
-                          <Text style={styles.historyAmountValue}>₹{history.total_amount}</Text>
-                        </View>
-                        <View style={styles.historyAmountRow}>
-                          <Text style={styles.historyAmountLabel}>Advance:</Text>
-                          <Text style={styles.historyAmountValue}>₹{history.advance_amount}</Text>
-                        </View>
-                        <View style={styles.historyAmountRow}>
-                          <Text style={styles.historyAmountLabel}>Due:</Text>
-                          <Text style={[styles.historyAmountValue, styles.dueAmountText]}>₹{history.due_amount}</Text>
-                        </View>
-                      </View>
-                    )}
-
-                    {history.transaction_id && (
-                      <View style={styles.historyDetail}>
-                        <Text style={styles.historyDetailLabel}>Transaction ID:</Text>
-                        <Text style={styles.historyDetailValue}>{history.transaction_id}</Text>
-                      </View>
-                    )}
-
-                    {history.dead_reason && (
-                      <View style={styles.historyDetail}>
-                        <Text style={styles.historyDetailLabel}>Reason:</Text>
-                        <Text style={styles.historyDetailValue}>{history.dead_reason}</Text>
+                      <View style={[styles.infoRow, { marginTop: 8 }]}>
+                        <Calendar size={14} color={Colors.text.secondary} />
+                        <Text style={styles.infoText}>
+                          Next: {new Date(history.next_follow_up_date).toLocaleDateString()}
+                        </Text>
                       </View>
                     )}
                   </View>
@@ -658,52 +782,16 @@ This is a 7-day advance reminder for the travel date.`;
         transparent={true}
         onRequestClose={() => setShowFollowUpModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Follow-Up</Text>
               <TouchableOpacity onPress={handleCloseModal}>
-                <View style={styles.iconContainer}>
-                  <X size={24} color="#666" />
-                </View>
+                <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
 
-            {currentLead && (
-              <View style={styles.leadInfo}>
-                <Text style={styles.leadInfoName}>{currentLead.client_name}</Text>
-                <Text style={styles.leadInfoDetail}>{currentLead.place} • {currentLead.no_of_pax} Pax</Text>
-              </View>
-            )}
-
-            {currentLead && currentLead.contact_number && (
-              <View style={styles.actionButtons}>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.callButton]}
-                  onPress={() => handleCall(currentLead.contact_number, currentLead)}
-                >
-                  <View style={styles.buttonContent}>
-                    <View style={styles.iconContainer}>
-                      <Phone size={20} color="#fff" />
-                    </View>
-                    <Text style={[styles.actionButtonText, styles.actionButtonTextWithIcon]}>Call</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.whatsappButton]}
-                  onPress={() => handleWhatsApp(currentLead.contact_number, currentLead.client_name, currentLead.place)}
-                >
-                  <View style={styles.buttonContent}>
-                    <View style={styles.iconContainer}>
-                      <MessageCircle size={20} color="#fff" />
-                    </View>
-                    <Text style={[styles.actionButtonText, styles.actionButtonTextWithIcon]}>WhatsApp</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            <ScrollView style={styles.modalScroll}>
+            <ScrollView style={{ maxHeight: '80%' }} keyboardShouldPersistTaps="handled">
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Action Type *</Text>
                 <TouchableOpacity
@@ -714,24 +802,136 @@ This is a 7-day advance reminder for the travel date.`;
                     {actionType ? actionTypes.find(a => a.value === actionType)?.label : 'Select action type'}
                   </Text>
                   <View style={styles.iconContainer}>
-                    <ChevronDown size={20} color="#666" />
+                    <ChevronDown size={20} color={Colors.text.secondary} />
                   </View>
                 </TouchableOpacity>
 
                 {showActionPicker && (
                   <View style={styles.pickerOptions}>
-                    {actionTypes.map((type) => (
+                    <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled={true}>
+                      {actionTypes.map((type) => (
+                        <TouchableOpacity
+                          key={type.value}
+                          style={styles.pickerOption}
+                          onPress={() => {
+                            setActionType(type.value);
+                            setShowActionPicker(false);
+                          }}
+                        >
+                          <Text style={styles.pickerOptionText}>{type.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Link Itinerary (Optional)</Text>
+                <TouchableOpacity
+                  style={styles.pickerButton}
+                  onPress={() => {
+                    setShowItineraryPicker(!showItineraryPicker);
+                    setItinerarySearchQuery('');
+                  }}
+                >
+                  <Text style={[styles.pickerButtonText, !itineraryId && styles.placeholderText]}>
+                    {itineraryId
+                      ? availableItineraries.find(i => i.id === itineraryId)?.name || 'Itinerary Linked'
+                      : 'Select Itinerary'}
+                  </Text>
+                  <ChevronDown size={20} color={Colors.text.secondary} />
+                </TouchableOpacity>
+
+                {showItineraryPicker && (
+                  <View style={styles.pickerOptions}>
+                    <View style={{ flexDirection: 'row', gap: 8, padding: 8 }}>
+                      <TextInput
+                        style={[styles.input, { flex: 1, margin: 0, height: 40 }]}
+                        placeholder="Name..."
+                        placeholderTextColor={Colors.text.tertiary}
+                        value={itinerarySearchQuery}
+                        onChangeText={setItinerarySearchQuery}
+                        autoCapitalize="none"
+                      />
+                      <TextInput
+                        style={[styles.input, { width: 60, margin: 0, height: 40 }]}
+                        placeholder="Day"
+                        placeholderTextColor={Colors.text.tertiary}
+                        value={filterDays}
+                        onChangeText={setFilterDays}
+                        keyboardType="numeric"
+                      />
+                      <TextInput
+                        style={[styles.input, { width: 60, margin: 0, height: 40 }]}
+                        placeholder="Pax"
+                        placeholderTextColor={Colors.text.tertiary}
+                        value={filterPax}
+                        onChangeText={setFilterPax}
+                        keyboardType="numeric"
+                      />
+                    </View>
+                    <View style={{ paddingHorizontal: 8, paddingBottom: 8 }}>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        {['All', 'driver_with_cab', 'self_drive_cab', 'self_drive_scooter'].map((mode) => (
+                          <TouchableOpacity
+                            key={mode}
+                            onPress={() => setFilterTransport(mode === 'All' ? '' : mode)}
+                            style={{
+                              backgroundColor: filterTransport === (mode === 'All' ? '' : mode) ? Colors.primary : Colors.background,
+                              paddingHorizontal: 12,
+                              paddingVertical: 6,
+                              borderRadius: 16,
+                              marginRight: 8,
+                              borderWidth: 1,
+                              borderColor: Colors.border
+                            }}
+                          >
+                            <Text style={{
+                              color: filterTransport === (mode === 'All' ? '' : mode) ? '#fff' : Colors.text.primary,
+                              fontSize: 12,
+                              fontWeight: '600'
+                            }}>
+                              {mode === 'All' ? 'All Transport' : mode.replace(/_/g, ' ')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                    <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled={true}>
                       <TouchableOpacity
-                        key={type.value}
                         style={styles.pickerOption}
                         onPress={() => {
-                          setActionType(type.value);
-                          setShowActionPicker(false);
+                          setItineraryId(null);
+                          setShowItineraryPicker(false);
                         }}
                       >
-                        <Text style={styles.pickerOptionText}>{type.label}</Text>
+                        <Text style={[styles.pickerOptionText, { color: Colors.text.tertiary }]}>None</Text>
                       </TouchableOpacity>
-                    ))}
+                      {availableItineraries
+                        .filter(itinerary => {
+                          const matchesName = itinerary.name.toLowerCase().includes(itinerarySearchQuery.toLowerCase());
+                          const matchesDays = !filterDays || (itinerary.days && itinerary.days.toString() === filterDays);
+                          const matchesPax = !filterPax || (itinerary.no_of_pax && itinerary.no_of_pax.toString() === filterPax);
+                          const matchesTransport = !filterTransport || (itinerary.mode_of_transport === filterTransport);
+
+                          return matchesName && matchesDays && matchesPax && matchesTransport;
+                        })
+                        .map((itinerary) => (
+                          <TouchableOpacity
+                            key={itinerary.id}
+                            style={styles.pickerOption}
+                            onPress={() => {
+                              setItineraryId(itinerary.id);
+                              setShowItineraryPicker(false);
+                            }}
+                          >
+                            <Text style={styles.pickerOptionText}>
+                              {itinerary.name} ({itinerary.days || '?'}D, {itinerary.no_of_pax || '?'}Pax)
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                    </ScrollView>
                   </View>
                 )}
               </View>
@@ -781,7 +981,7 @@ This is a 7-day advance reminder for the travel date.`;
                     <TextInput
                       style={styles.input}
                       placeholder="Enter itinerary ID"
-                      value={itineraryId}
+                      value={itineraryId || ''}
                       onChangeText={setItineraryId}
                     />
                   </View>
@@ -809,9 +1009,9 @@ This is a 7-day advance reminder for the travel date.`;
                   </View>
 
                   {totalAmount && advanceAmount && (
-                    <View style={styles.dueAmountContainer}>
-                      <Text style={styles.dueAmountLabel}>Due Amount:</Text>
-                      <Text style={styles.dueAmountValue}>₹{calculateDueAmount().toFixed(2)}</Text>
+                    <View style={{ padding: 12, backgroundColor: Colors.surfaceHighlight, borderRadius: 8, marginBottom: 16 }}>
+                      <Text style={{ fontWeight: '600', color: Colors.text.primary }}>Due Amount:</Text>
+                      <Text style={{ fontSize: 18, fontWeight: 'bold', color: Colors.primary }}>₹{calculateDueAmount().toFixed(2)}</Text>
                     </View>
                   )}
 
@@ -837,9 +1037,7 @@ This is a 7-day advance reminder for the travel date.`;
                     <Text style={[styles.pickerButtonText, !deadReason && styles.placeholderText]}>
                       {deadReason || 'Select reason'}
                     </Text>
-                    <View style={styles.iconContainer}>
-                      <ChevronDown size={20} color="#666" />
-                    </View>
+                    <ChevronDown size={20} color={Colors.text.secondary} />
                   </TouchableOpacity>
 
                   {showDeadReasonPicker && (
@@ -867,6 +1065,7 @@ This is a 7-day advance reminder for the travel date.`;
                   <TextInput
                     style={styles.textArea}
                     placeholder="Enter remarks..."
+                    placeholderTextColor={Colors.text.tertiary}
                     value={remark}
                     onChangeText={setRemark}
                     multiline
@@ -879,35 +1078,123 @@ This is a 7-day advance reminder for the travel date.`;
 
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
+                style={[styles.cancelButton, { flex: 1, marginRight: 8 }]}
                 onPress={handleCloseModal}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
-                  styles.modalButton,
-                  styles.saveButton,
-                  (saving || !actionType || !remark.trim() ||
-                    (['itinerary_sent', 'itinerary_updated', 'follow_up'].includes(actionType) && (!nextFollowUpDate || !nextFollowUpTime)) ||
-                    (actionType === 'confirmed_advance_paid' && (!travelDate || !itineraryId || !totalAmount || !advanceAmount || !transactionId)) ||
-                    (actionType === 'dead' && !deadReason)
-                  ) && styles.disabledButton
+                  styles.saveButton, { flex: 2, marginTop: 12, opacity: saving ? 0.7 : 1 }
                 ]}
                 onPress={handleSaveFollowUp}
-                disabled={
-                  saving || !actionType || !remark.trim() ||
-                  (['itinerary_sent', 'itinerary_updated', 'follow_up'].includes(actionType) && (!nextFollowUpDate || !nextFollowUpTime)) ||
-                  (actionType === 'confirmed_advance_paid' && (!travelDate || !itineraryId || !totalAmount || !advanceAmount || !transactionId)) ||
-                  (actionType === 'dead' && !deadReason)
-                }
+                disabled={saving}
               >
                 {saving ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={Colors.text.inverse} />
                 ) : (
                   <Text style={styles.saveButtonText}>Save</Text>
                 )}
               </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showItineraryModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowItineraryModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalContent, { maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Lead & Itinerary Details</Text>
+              <TouchableOpacity onPress={() => setShowItineraryModal(false)}>
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+
+            {fetchingItinerary ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+                <Text style={{ marginTop: 12, color: Colors.text.secondary }}>Loading details...</Text>
+              </View>
+            ) : (
+              <ScrollView style={{ padding: 0 }}>
+                {/* Lead Details Section */}
+                {currentLead && (
+                  <View style={{ marginBottom: 20 }}>
+                    <Text style={styles.label}>Guest Details</Text>
+                    <View style={styles.leadInfoContainer}>
+                      <Text style={styles.clientName}>{currentLead.client_name}</Text>
+                      <Text style={styles.leadDetail}>{currentLead.place} • {currentLead.no_of_pax} Pax</Text>
+                      {currentLead.contact_number && (
+                        <TouchableOpacity
+                          style={styles.leadContactRow}
+                          onPress={() => Linking.openURL(`tel:${currentLead.contact_number}`)}
+                        >
+                          <Phone size={14} color={Colors.primary} />
+                          <Text style={styles.leadContactText}>{currentLead.contact_number}</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
+
+                {/* Itinerary Details Section */}
+                {selectedItinerary ? (
+                  <>
+                    <View style={styles.divider} />
+                    <View style={{ marginBottom: 16, borderBottomWidth: 1, borderBottomColor: Colors.border, paddingBottom: 16 }}>
+                      <Text style={styles.label}>Itinerary: {selectedItinerary.name}</Text>
+                      <Text style={{ fontSize: 14, color: Colors.text.secondary }}>{selectedItinerary.days} Days</Text>
+                    </View>
+
+                    <View style={{ marginBottom: 16 }}>
+                      <Text style={[styles.label, { color: Colors.text.primary }]}>Overview</Text>
+                      <Text style={{ fontSize: 14, color: Colors.text.secondary, lineHeight: 20 }}>
+                        {selectedItinerary.full_itinerary || 'No overview available'}
+                      </Text>
+                    </View>
+
+                    <View style={{ marginBottom: 16 }}>
+                      <Text style={[styles.label, { color: Colors.text.primary }]}>Inclusions</Text>
+                      <Text style={{ fontSize: 14, color: Colors.text.secondary, lineHeight: 20 }}>
+                        {selectedItinerary.inclusions || 'N/A'}
+                      </Text>
+                    </View>
+
+                    <View style={{ backgroundColor: Colors.surfaceHighlight, padding: 16, borderRadius: 12, marginBottom: 24 }}>
+                      <Text style={{ fontSize: 13, color: Colors.text.secondary, marginBottom: 4 }}>Lead Cost (USD)</Text>
+                      <Text style={{ fontSize: 24, fontWeight: '700', color: Colors.text.primary }}>${selectedItinerary.cost_usd}</Text>
+                    </View>
+                  </>
+                ) : (
+                  <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>No itinerary linked to this follow-up.</Text>
+                  </View>
+                )}
+              </ScrollView>
+            )}
+
+            <View style={[styles.modalActions, { marginTop: 0, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 16 }]}>
+              <TouchableOpacity
+                style={[styles.cancelButton, { flex: 1, marginTop: 0 }]}
+                onPress={() => setShowItineraryModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Close</Text>
+              </TouchableOpacity>
+              {selectedItinerary && (
+                <TouchableOpacity
+                  style={[styles.saveButton, { flex: 1, marginTop: 0, marginLeft: 12, backgroundColor: Colors.accent }]}
+                  onPress={() => handleEditItinerary(selectedItinerary.id)}
+                >
+                  <Edit size={18} color={Colors.text.inverse} style={{ marginRight: 6 }} />
+                  <Text style={styles.saveButtonText}>Edit</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -919,486 +1206,339 @@ This is a 7-day advance reminder for the travel date.`;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.primary,
     paddingTop: 60,
+    paddingBottom: 20,
+    paddingHorizontal: Layout.spacing.lg,
+    borderBottomLeftRadius: Layout.radius.xl,
+    borderBottomRightRadius: Layout.radius.xl,
+    ...Layout.shadows.md,
+  },
+  headerTop: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 12,
-    backgroundColor: '#fff',
-  },
-  filterButton: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
     alignItems: 'center',
+    marginBottom: Layout.spacing.md,
   },
-  filterButtonActive: {
-    backgroundColor: '#f59e0b',
-    borderColor: '#f59e0b',
+  title: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: Colors.text.inverse,
+    letterSpacing: 0.5,
   },
-  filterButtonText: {
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: Layout.radius.full,
+    paddingHorizontal: Layout.spacing.md,
+    height: 44,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  searchIcon: {
+    marginRight: Layout.spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    color: Colors.text.inverse,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: Layout.spacing.md,
+    marginTop: -Layout.spacing.lg, // Overlap for modern look
+    marginBottom: Layout.spacing.md,
+  },
+  tab: {
+    paddingVertical: Layout.spacing.sm,
+    paddingHorizontal: Layout.spacing.lg,
+    borderRadius: Layout.radius.full,
+    marginRight: Layout.spacing.sm,
+    backgroundColor: Colors.surface,
+    ...Layout.shadows.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  activeTab: {
+    backgroundColor: Colors.accent,
+    borderColor: Colors.accent,
+  },
+  tabText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#666',
+    color: Colors.text.secondary,
   },
-  filterButtonTextActive: {
-    color: '#fff',
+  activeTabText: {
+    color: Colors.text.inverse,
+    fontWeight: '700',
   },
-  content: {
-    flex: 1,
+  listContent: {
+    padding: Layout.spacing.md,
+    paddingTop: Layout.spacing.xl, // Space for overlapping tabs
   },
-  contentContainer: {
-    padding: 16,
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
+    padding: Layout.spacing.md,
+    marginBottom: Layout.spacing.md,
+    ...Layout.shadows.sm,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.primary,
   },
-  emptyContainer: {
-    padding: 40,
-    alignItems: 'center',
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: Layout.spacing.sm,
   },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-  },
-  followUpCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  followUpHeader: {
-    marginBottom: 8,
-  },
-  leadName: {
+  clientName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 2,
   },
-  followUpDetails: {
+  leadTypeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: Layout.radius.sm,
+    marginLeft: 8,
+  },
+  cardBody: {
     gap: 8,
   },
-  leadDetail: {
-    fontSize: 14,
-    color: '#666',
-  },
-  dateTimeRow: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  dateTimeItem: {
-    flex: 1,
-  },
-  dateTimeContent: {
+  infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  iconContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dateTimeText: {
+  infoText: {
     fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
+    color: Colors.text.secondary,
   },
   remarkContainer: {
-    backgroundColor: '#f9fafb',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 4,
+    backgroundColor: Colors.background,
+    padding: 8,
+    borderRadius: Layout.radius.md,
+    marginTop: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.text.tertiary,
   },
   remarkText: {
-    fontSize: 14,
-    color: '#1a1a1a',
+    fontSize: 13,
+    color: Colors.text.secondary,
+    fontStyle: 'italic',
   },
-  cardActionButtons: {
+  cardFooter: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'flex-end',
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-  },
-  cardActionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    backgroundColor: '#f3f4f6',
-  },
-  buttonIconContainer: {
-    marginRight: 4,
-  },
-  cardActionButtonText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#1a1a1a',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    marginBottom: 16,
+    borderTopColor: Colors.border,
+    gap: 12,
   },
   actionButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  buttonContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: Layout.radius.full,
+    gap: 6,
+    ...Layout.shadows.sm,
   },
-  callButton: {
-    backgroundColor: '#3b82f6',
+  whatsAppButton: {
+    backgroundColor: '#25D366', // Keep brand color
   },
-  whatsappButton: {
-    backgroundColor: '#25D366',
-  },
-  actionButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  actionButtonTextWithIcon: {
-    marginLeft: 8,
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '85%',
-  },
-  modalScroll: {
-    maxHeight: '60%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-  },
-  leadInfo: {
-    backgroundColor: '#f5f5f5',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 20,
-  },
-  leadInfoHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  leadInfoText: {
-    flex: 1,
-    marginRight: 12,
-  },
-  leadInfoName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 4,
-  },
-  leadInfoDetail: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  leadInfoContact: {
-    fontSize: 13,
-    color: '#3b82f6',
-    fontWeight: '500',
-  },
-  leadInfoActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  leadInfoActionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#3b82f6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  formGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#e5e5e5',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: '#1a1a1a',
-  },
-  textArea: {
-    borderWidth: 1,
-    borderColor: '#e5e5e5',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: '#1a1a1a',
-    minHeight: 100,
+  contentContainer: {
+    paddingBottom: Layout.spacing.xl,
   },
   modalActions: {
     flexDirection: 'row',
     marginTop: 20,
   },
-  modalButton: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
+  callButton: {
+    backgroundColor: Colors.status.info,
   },
-  cancelButton: {
-    backgroundColor: '#f5f5f5',
+  followUpButton: {
+    backgroundColor: Colors.primary,
   },
-  cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  saveButton: {
-    backgroundColor: '#3b82f6',
-  },
-  saveButtonText: {
+  actionButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Layout.radius.xl,
+    borderTopRightRadius: Layout.radius.xl,
+    padding: Layout.spacing.lg,
+    maxHeight: '85%',
+    ...Layout.shadows.lg,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Layout.spacing.lg,
+    paddingBottom: Layout.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: Colors.text.primary,
+  },
+  formGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary, // Darker label
+    marginBottom: 8,
+    marginLeft: 4,
   },
   pickerButton: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    padding: 14,
+    borderRadius: Layout.radius.md,
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: Colors.border,
   },
   pickerButtonText: {
-    fontSize: 16,
-    color: '#1a1a1a',
+    fontSize: 15,
+    color: Colors.text.primary,
   },
   placeholderText: {
-    color: '#999',
+    color: Colors.text.tertiary,
+  },
+  iconContainer: {
+    marginLeft: 8,
   },
   pickerOptions: {
-    marginTop: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.md,
+    marginTop: 4,
     borderWidth: 1,
-    borderColor: '#e5e5e5',
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    maxHeight: 200,
+    borderColor: Colors.border,
+    ...Layout.shadows.sm,
+    overflow: 'hidden',
   },
   pickerOption: {
-    padding: 12,
+    padding: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
+    borderBottomColor: Colors.border,
   },
   pickerOptionText: {
-    fontSize: 16,
-    color: '#1a1a1a',
+    fontSize: 15,
+    color: Colors.text.primary,
   },
-  dueAmountContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#f0f9ff',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 20,
-  },
-  dueAmountLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
-  },
-  dueAmountValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#3b82f6',
-  },
-  addFollowUpButton: {
-    backgroundColor: '#3b82f6',
+  input: {
+    backgroundColor: Colors.background,
+    borderRadius: Layout.radius.md,
     padding: 14,
-    borderRadius: 8,
-    marginBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addFollowUpButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  historyScroll: {
-    flex: 1,
-  },
-  historyScrollContent: {
-    paddingBottom: 20,
-  },
-  emptyHistoryContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyHistoryText: {
-    fontSize: 16,
-    color: '#999',
-    marginTop: 16,
-  },
-  historyCard: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    fontSize: 15,
+    color: Colors.text.primary,
     borderWidth: 1,
-    borderColor: '#e5e5e5',
+    borderColor: Colors.border,
   },
-  historyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+  textArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
   },
-  historyActionType: {
+  saveButton: {
+    backgroundColor: Colors.primary,
+    padding: 16,
+    borderRadius: Layout.radius.full,
+    alignItems: 'center',
+    marginTop: 10,
+    ...Layout.shadows.md,
+  },
+  saveButtonText: {
+    color: Colors.text.inverse,
     fontSize: 16,
     fontWeight: '700',
-    color: '#1a1a1a',
-    flex: 1,
+    letterSpacing: 0.5,
   },
-  historyDate: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 8,
-  },
-  historyNote: {
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  historyNoteLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
-    marginBottom: 4,
-  },
-  historyNoteText: {
-    fontSize: 14,
-    color: '#1a1a1a',
-    lineHeight: 20,
-  },
-  historyDetail: {
-    marginBottom: 8,
-  },
-  historyDetailRow: {
-    flexDirection: 'row',
+  cancelButton: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: Layout.radius.full,
     alignItems: 'center',
-    gap: 6,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  historyDetailText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  historyDetailLabel: {
-    fontSize: 12,
+  cancelButtonText: {
+    color: Colors.text.secondary,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#666',
-    marginBottom: 2,
   },
-  historyDetailValue: {
-    fontSize: 14,
-    color: '#1a1a1a',
-  },
-  historyAmounts: {
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  historyAmountRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  emptyContainer: {
     alignItems: 'center',
-    marginBottom: 8,
+    justifyContent: 'center',
+    padding: 40,
   },
-  historyAmountLabel: {
-    fontSize: 14,
+  emptyText: {
+    fontSize: 18,
     fontWeight: '600',
-    color: '#666',
+    color: Colors.text.secondary,
+    marginTop: 12,
   },
-  historyAmountValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1a1a1a',
+  emptySubtext: {
+    fontSize: 14,
+    color: Colors.text.tertiary,
+    marginTop: 4,
+    textAlign: 'center',
   },
-  dueAmountText: {
-    color: '#3b82f6',
+  leadInfoContainer: {
+    backgroundColor: Colors.surfaceHighlight, // Subtle highlight
+    borderRadius: Layout.radius.md,
+    padding: Layout.spacing.md,
+    marginBottom: Layout.spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '30', // Semi-transparent brand color
+  },
+  leadContactRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+    gap: 16,
+  },
+  leadContactText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    fontWeight: '500',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginVertical: Layout.spacing.md,
+  },
+  backButton: {
+    padding: 4,
+  },
+  leadDetail: {
+    fontSize: 14,
+    color: Colors.text.secondary,
   },
 });

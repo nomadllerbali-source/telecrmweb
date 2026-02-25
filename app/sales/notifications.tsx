@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { ArrowLeft, Trash2, CheckCircle, AlertCircle } from 'lucide-react-native';
 import { useCallback } from 'react';
+import { Colors, Layout } from '@/constants/Colors';
 
 interface Notification {
   id: string;
@@ -121,7 +122,7 @@ export default function NotificationsScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#8b5cf6" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -131,7 +132,7 @@ export default function NotificationsScreen() {
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <View style={styles.iconContainer}>
-            <ArrowLeft size={24} color="#1a1a1a" />
+            <ArrowLeft size={24} color={Colors.text.primary} />
           </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
@@ -141,7 +142,7 @@ export default function NotificationsScreen() {
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {notifications.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <AlertCircle size={48} color="#ccc" />
+            <AlertCircle size={48} color={Colors.text.tertiary} />
             <Text style={styles.emptyText}>No notifications yet</Text>
           </View>
         ) : (
@@ -169,14 +170,14 @@ export default function NotificationsScreen() {
                     style={styles.actionButton}
                     onPress={() => handleMarkAsRead(notification.id)}
                   >
-                    <CheckCircle size={20} color="#8b5cf6" />
+                    <CheckCircle size={20} color={Colors.primary} />
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
                   style={styles.actionButton}
                   onPress={() => handleDelete(notification.id)}
                 >
-                  <Trash2 size={20} color="#dc2626" />
+                  <Trash2 size={20} color={Colors.status.error} />
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>
@@ -190,26 +191,29 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 16,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Layout.spacing.lg,
     paddingTop: 60,
+    paddingBottom: Layout.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: Colors.border,
+    ...Layout.shadows.sm,
   },
   backButton: {
     padding: 4,
+    borderRadius: Layout.radius.full,
   },
   iconContainer: {
     justifyContent: 'center',
@@ -217,14 +221,14 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 16,
+    padding: Layout.spacing.lg,
   },
   emptyContainer: {
     padding: 40,
@@ -233,27 +237,23 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#999',
+    color: Colors.text.tertiary,
     marginTop: 16,
   },
   notificationCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: Layout.radius.lg,
     padding: 16,
     marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    ...Layout.shadows.sm,
   },
   unreadCard: {
-    backgroundColor: '#fafaf9',
+    backgroundColor: Colors.surfaceHighlight,
     borderLeftWidth: 4,
-    borderLeftColor: '#8b5cf6',
+    borderLeftColor: Colors.primary,
   },
   notificationContent: {
     flex: 1,
@@ -266,20 +266,20 @@ const styles = StyleSheet.create({
   },
   notificationTitle: {
     fontSize: 15,
-    color: '#666',
+    color: Colors.text.secondary,
     fontWeight: '500',
   },
   unreadTitle: {
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     fontWeight: '600',
   },
   notificationTime: {
     fontSize: 12,
-    color: '#999',
+    color: Colors.text.tertiary,
   },
   notificationMessage: {
     fontSize: 14,
-    color: '#1a1a1a',
+    color: Colors.text.primary,
     lineHeight: 20,
   },
   actions: {
