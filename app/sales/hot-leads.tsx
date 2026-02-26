@@ -159,43 +159,11 @@ export default function HotLeadsScreen() {
           .update({ status: 'confirmed' })
           .eq('id', currentLead.id);
 
-        // 🆕 Sync advance payment to Finance Tracker
-        console.log('🚀 ATTEMPTING FINANCE SYNC FROM HOT LEADS');
-        try {
-          const syncResult = await syncAdvancePaymentToFinance({
-            leadName: currentLead.client_name,
-            advanceAmount: parseFloat(advanceAmount),
-            totalAmount: parseFloat(totalAmount),
-            dueAmount: calculateDueAmount(),
-            salesPersonId: user?.id || '',
-            salesPersonEmail: user?.email || '',
-            // @ts-ignore
-            salesPersonName: user?.full_name || '',
-            transactionId: transactionId || 'N/A',
-            place: currentLead.place,
-            pax: currentLead.no_of_pax,
-            phoneNumber: currentLead.contact_number,
-            travelDate: nextFollowUpDate.toISOString().split('T')[0], // Using nextFollowUpDate as a proxy
-            crmLeadId: currentLead.id
-          });
-
-          if (syncResult.success) {
-            console.log('✅ Advance payment synced to Finance Tracker');
-            const tx = Array.isArray(syncResult.data) ? syncResult.data[0] : syncResult.data;
-            Alert.alert(
-              'Finance Sync',
-              `Successfully synced booking to Finance Tracker!\n\n` +
-              `Amount: ₹${tx?.amount?.toLocaleString()}\n` +
-              `Tx ID: ${tx?.id?.slice(0, 8)}...`
-            );
-          } else {
-            console.warn('⚠️ Failed to sync to Finance Tracker:', syncResult.error);
-            Alert.alert('Finance Sync Error', 'Lead confirmed, but failed to sync to Finance Tracker: ' + syncResult.error);
-          }
-        } catch (financeError: any) {
-          console.error('❌ Error syncing to Finance Tracker:', financeError);
-          Alert.alert('Finance Sync Critical Error', 'Failed to connect to Finance Tracker: ' + financeError.message);
-        }
+        // Update lead status to confirmed
+        await supabase
+          .from('leads')
+          .update({ status: 'confirmed' })
+          .eq('id', currentLead.id);
       }
 
       if (actionType === 'dead') {

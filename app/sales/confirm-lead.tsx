@@ -124,44 +124,6 @@ export default function ConfirmLeadScreen() {
         }
       }
 
-      // 🆕 Sync advance payment to Finance Tracker
-      console.log('🚀 ATTEMPTING FINANCE SYNC FROM CONFIRM SCREEN');
-      try {
-        const syncResult = await syncAdvancePaymentToFinance({
-          leadName: lead?.client_name || '',
-          advanceAmount: parseFloat(formData.advanceAmount),
-          totalAmount: parseFloat(formData.totalAmount),
-          dueAmount: parseFloat(formData.totalAmount) - parseFloat(formData.advanceAmount),
-          salesPersonId: user?.id || '',
-          salesPersonEmail: user?.email || '',
-          // @ts-ignore
-          salesPersonName: user?.full_name || '',
-          transactionId: formData.transactionId || 'N/A',
-          place: lead?.place || '',
-          pax: lead?.no_of_pax || 0,
-          phoneNumber: lead?.contact_number || '',
-          travelDate: formData.travelDate,
-          crmLeadId: leadId as string
-        });
-
-        if (syncResult.success) {
-          console.log('✅ Advance payment synced to Finance Tracker');
-          const tx = Array.isArray(syncResult.data) ? syncResult.data[0] : syncResult.data;
-          Alert.alert(
-            'Finance Sync',
-            `Successfully synced booking to Finance Tracker!\n\n` +
-            `Amount: ₹${tx?.amount?.toLocaleString()}\n` +
-            `Tx ID: ${tx?.id?.slice(0, 8)}...`
-          );
-        } else {
-          console.warn('⚠️ Failed to sync to Finance Tracker:', syncResult.error);
-          Alert.alert('Finance Sync Error', 'Lead confirmed, but failed to sync to Finance Tracker: ' + syncResult.error);
-        }
-      } catch (financeError: any) {
-        console.error('❌ Error syncing to Finance Tracker:', financeError);
-        Alert.alert('Finance Sync Critical Error', 'Failed to connect to Finance Tracker: ' + financeError.message);
-      }
-
       Alert.alert('Success', 'Lead confirmed successfully');
       router.push('/sales');
     } catch (err: any) {

@@ -90,11 +90,10 @@ export async function syncAdvancePaymentToFinance({
 
         if (leadError) {
             console.error('❌ Failed to create lead record:', leadError);
-            console.error('❌ Lead data that failed:', leadData);
-            // Continue anyway to create transaction
-        } else {
-            console.log('✅ Lead record created/updated:', leadRecord);
+            throw new Error(`Finance Lead Sync Failed: ${leadError.message}`);
         }
+
+        console.log('✅ Lead record created/updated:', leadRecord);
 
         // Create income transaction in Finance Tracker
         const { data: transaction, error: transactionError } = await supabase

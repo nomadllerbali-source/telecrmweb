@@ -1,23 +1,28 @@
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, LayoutAnimation, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { loginUser } from '@/services/auth';
-import { Lock, User, Briefcase, ChevronRight } from 'lucide-react-native';
+import { Lock, User, ChevronRight, Info, X } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Layout } from '@/constants/Colors';
+import { networkLog } from '@/lib/supabase';
+import Constants from 'expo-constants';
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [clickCount, setClickCount] = useState(0);
   const { user, isLoading, login } = useAuth();
   const router = useRouter();
 
+  const appVersion = Constants.expoConfig?.version || '1.0.7';
+
   useEffect(() => {
     if (user && !isLoading) {
-      // Delay navigation slightly to ensure router is ready
       const timer = setTimeout(() => {
         try {
           if (user.role === 'admin') {
@@ -32,6 +37,15 @@ export default function LoginScreen() {
       return () => clearTimeout(timer);
     }
   }, [user, isLoading, router]);
+
+  const handleTitleClick = () => {
+    const nextCount = clickCount + 1;
+    setClickCount(nextCount);
+    if (nextCount >= 5) {
+      setShowDiagnostics(true);
+      setClickCount(0);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -62,7 +76,7 @@ export default function LoginScreen() {
 
   return (
     <LinearGradient
-      colors={[Colors.primary, '#4338ca', '#312e81']} // Indigo gradient from Colors
+      colors={[Colors.primary, '#4338ca', '#312e81']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.gradient}
@@ -72,10 +86,12 @@ export default function LoginScreen() {
         style={styles.container}
       >
         <View style={styles.card}>
-          <View style={styles.headerContainer}>
-            <Text style={styles.appName}>Nomadller Solutions</Text>
-            <Text style={styles.tagline}>CRM & Sales Management</Text>
-          </View>
+          <TouchableOpacity activeOpacity={1} onPress={handleTitleClick}>
+            <View style={styles.headerContainer}>
+              <Text style={styles.appName}>Nomadller Solutions</Text>
+              <Text style={styles.tagline}>CRM & Sales Management</Text>
+            </View>
+          </TouchableOpacity>
 
           <View style={styles.separator} />
 
@@ -127,9 +143,42 @@ export default function LoginScreen() {
               </View>
             )}
           </TouchableOpacity>
+
+          <Text style={styles.versionLabel}>Version {appVersion}</Text>
         </View>
 
         <Text style={styles.copyright}>© 2024 Nomadller Solutions</Text>
+
+        {showDiagnostics && (
+          <View style={styles.diagnosticsOverlay}>
+            <View style={styles.diagnosticsCard}>
+              <View style={styles.diagHeader}>
+                <Text style={styles.diagTitle}>Network Diagnostics</Text>
+                <TouchableOpacity onPress={() => setShowDiagnostics(false)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                style={styles.diagScroll}
+                contentContainerStyle={{ padding: 10 }}
+              >
+                {networkLog.length === 0 ? (
+                  <Text style={styles.diagText}>No logs yet. Try logging in.</Text>
+                ) : (
+                  networkLog.map((log, i) => (
+                    <Text key={i} style={styles.diagText}>{log}</Text>
+                  ))
+                )}
+              </ScrollView>
+              <TouchableOpacity
+                style={styles.diagCloseBtn}
+                onPress={() => setShowDiagnostics(false)}
+              >
+                <Text style={styles.diagCloseText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </LinearGradient>
   );
@@ -160,35 +209,6 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     ...Layout.shadows.lg,
     alignItems: 'center',
-  },
-  logoContainer: {
-    marginBottom: Layout.spacing.md,
-  },
-  logo: {
-    width: 280,
-    height: 180,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: -20,
-  },
-  logoImage: {
-    width: '100%',
-    height: '100%',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: Colors.text.primary,
-    textAlign: 'center',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 24,
-    fontWeight: '300',
-    color: Colors.text.secondary,
-    textAlign: 'center',
-    marginBottom: Layout.spacing.lg,
-    marginTop: -4,
   },
   separator: {
     width: 40,
@@ -265,6 +285,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  versionLabel: {
+    marginTop: 20,
+    fontSize: 12,
+    color: Colors.text.tertiary,
+    fontWeight: '600',
+  },
   copyright: {
     position: 'absolute',
     bottom: 30,
@@ -287,5 +313,54 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     textAlign: 'center',
   },
+  diagnosticsOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 1000,
+  },
+  diagnosticsCard: {
+    backgroundColor: 'white',
+    width: '100%',
+    maxHeight: '80%',
+    borderRadius: 20,
+    padding: 20,
+  },
+  diagHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  diagTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  diagScroll: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  diagText: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 11,
+    color: '#475569',
+    marginBottom: 4,
+  },
+  diagCloseBtn: {
+    marginTop: 15,
+    backgroundColor: '#1e293b',
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  diagCloseText: {
+    color: 'white',
+    fontWeight: 'bold',
+  }
 });
 

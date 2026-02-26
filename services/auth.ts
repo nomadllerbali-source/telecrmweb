@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase, setUserContext } from '@/lib/supabase';
 import { User } from '@/types';
 import * as Crypto from 'expo-crypto';
 
@@ -24,10 +24,7 @@ export async function loginUser(username: string, password: string): Promise<Use
 
     const user = data[0];
 
-    await supabase
-      .rpc('set_user_context', {
-        user_id: user.id
-      });
+    await setUserContext(user.id, user.role);
 
     await supabase
       .from('users')

@@ -64,9 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await AsyncStorage.setItem('user', JSON.stringify(userData));
       // Set user context but don't block on it
-      setUserContext(userData.id, userData.role).catch(err => {
-        console.warn('Failed to set user context:', err);
-      });
+      await setUserContext(userData.id, userData.role);
       setUser(userData);
     } catch (error) {
       console.error('Error saving user:', error);

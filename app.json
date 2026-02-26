@@ -2,7 +2,7 @@
   "expo": {
     "name": "Nomadller Solutions",
     "slug": "nomadller-solutions",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
     "scheme": "myapp",
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.telecomcrm.fresh2026",
-      "versionCode": 8,
+      "versionCode": 10,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#ffffff"

@@ -25,8 +25,8 @@ export default function SalesDashboard() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   useEffect(() => {
-    fetchCounts();
     if (user?.id) {
+      fetchCounts();
       syncUpcomingNotifications(user.id);
     }
 
@@ -54,7 +54,9 @@ export default function SalesDashboard() {
   useFocusEffect(
     useCallback(() => {
       fetchUnreadNotifications();
-      fetchCounts();
+      if (user?.id) {
+        fetchCounts();
+      }
     }, [])
   );
 
@@ -129,6 +131,10 @@ export default function SalesDashboard() {
       });
     } catch (err: any) {
       console.error('Error fetching counts:', err);
+      // Log more details to help debug missing data issues
+      if (user?.id) {
+        console.warn(`Fetch counts failed for user ${user.id} (${user.role})`);
+      }
     }
   };
 

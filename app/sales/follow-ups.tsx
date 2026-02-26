@@ -508,40 +508,7 @@ This is a 7-day advance reminder for the travel date.`;
           // Don't fail the entire operation if reminder fails
         }
 
-        // 🆕 Sync advance payment to Finance Tracker
-        console.log('🚀 ATTEMPTING FINANCE SYNC - Action Type:', actionType);
-        console.log('🚀 User Email:', user?.email);
-        console.log('🚀 Advance Amount:', advanceAmount);
-
-        try {
-          const syncResult = await syncAdvancePaymentToFinance({
-            leadName: currentLead.client_name,
-            advanceAmount: parseFloat(advanceAmount),
-            totalAmount: parseFloat(totalAmount),
-            dueAmount: calculateDueAmount(),
-            salesPersonId: user.id,
-            salesPersonEmail: user.email,
-            salesPersonName: user.full_name,
-            transactionId: transactionId || 'N/A',
-            place: currentLead.place,
-            pax: currentLead.no_of_pax,
-            phoneNumber: currentLead.contact_number,
-            travelDate: travelDate ? travelDate.toISOString().split('T')[0] : null,
-            crmLeadId: currentLead.id
-          });
-
-          if (syncResult.success) {
-            console.log('✅ Advance payment synced to Finance Tracker');
-            // Success alert for debugging
-            Alert.alert('Finance Sync', 'Successfully synced booking to Finance Tracker!');
-          } else {
-            console.warn('⚠️ Failed to sync to Finance Tracker:', syncResult.error);
-            Alert.alert('Finance Sync Error', 'Lead confirmed, but failed to sync to Finance Tracker: ' + syncResult.error);
-          }
-        } catch (financeError: any) {
-          console.error('❌ Error syncing to Finance Tracker:', financeError);
-          Alert.alert('Finance Sync Critical Error', 'Failed to connect to Finance Tracker: ' + financeError.message);
-        }
+        // Reminder creation continues...
       }
 
       handleCloseModal();
