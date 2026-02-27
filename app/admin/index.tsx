@@ -389,13 +389,10 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
     gap: 16,
   },
   cardWrapper: {
-    width: (width - 40 - 16) / 2, // 2 columns, 40 total padding, 16 gap
+    width: '100%',
   },
   menuCard: {
     borderRadius: 20,
