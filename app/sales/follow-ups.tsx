@@ -7,7 +7,7 @@ import { Lead, Itinerary } from '@/types';
 import { ArrowLeft, Calendar, Clock, Phone, MessageCircle, X, ChevronDown, Plus, History, Package, Edit } from 'lucide-react-native';
 import DateTimePickerComponent from '@/components/DateTimePicker';
 import { calendarService } from '@/services/calendar';
-import { scheduleFollowUpNotification } from '../../services/notifications';
+import { scheduleFollowUpNotification } from '@/services/notifications';
 import { syncAdvancePaymentToFinance } from '@/services/financeSync';
 import { Colors, Layout } from '@/constants/Colors';
 

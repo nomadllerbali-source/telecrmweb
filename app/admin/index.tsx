@@ -1,11 +1,34 @@
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, RefreshControl, Dimensions, Platform } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { UserPlus, ListPlus, BarChart3, Download, LogOut, MessageCircle, Bell, BookOpen, Map, Trophy, Target, MessageSquare, ChevronRight, Settings } from 'lucide-react-native';
-import { Colors, Layout } from '@/constants/Colors';
 import NotificationBar from '@/components/NotificationBar';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width } = Dimensions.get('window');
+
+// Futuristic Theme
+const Theme = {
+  bg: '#050511',           // Deep dark blue/black
+  surface: 'rgba(255, 255, 255, 0.03)', // Very transparent glass surface
+  surfaceGlow: 'rgba(0, 240, 255, 0.05)',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#94A3B8', // Slate 400
+  border: 'rgba(255, 255, 255, 0.1)',
+  neon: {
+    cyan: '#00f0ff',
+    purple: '#8b5cf6',
+    emerald: '#10b981',
+    amber: '#f59e0b',
+    indigo: '#6366f1',
+    pink: '#ec4899',
+    rose: '#f43f5e',
+    slate: '#94a3b8',
+    red: '#ff2a2a'
+  }
+};
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
@@ -73,11 +96,11 @@ export default function AdminDashboard() {
       title: 'Lead Management',
       items: [
         {
-          title: 'Assign New Lead',
-          description: 'Assign tasks to sales persons',
+          title: 'Assign Leads',
+          description: 'Distribute tasks',
           icon: ListPlus,
           route: '/admin/assign-lead',
-          color: Colors.primary,
+          color: Theme.neon.cyan,
         },
       ],
     },
@@ -85,70 +108,70 @@ export default function AdminDashboard() {
       title: 'Team Management',
       items: [
         {
-          title: 'Add New Sales Person',
-          description: 'Create and manage sales team',
+          title: 'Add Personnel',
+          description: 'Manage sales team',
           icon: UserPlus,
           route: '/admin/add-sales-person',
-          color: '#10b981', // Emerald
+          color: Theme.neon.emerald,
         },
         {
-          title: 'Performance Leaderboard',
-          description: 'Monthly sales rankings & goals',
+          title: 'Leaderboard',
+          description: 'Monthly rankings',
           icon: Trophy,
           route: '/admin/leaderboard',
-          color: '#f59e0b', // Amber
+          color: Theme.neon.amber,
         },
         {
-          title: 'Manage Targets',
-          description: 'Set monthly salesperson goals',
+          title: 'Set Targets',
+          description: 'Monthly goals',
           icon: Target,
           route: '/admin/manage-targets',
-          color: '#6366f1', // Indigo
+          color: Theme.neon.indigo,
         },
       ],
     },
     {
-      title: 'Operations & Content',
+      title: 'Operations',
       items: [
         {
-          title: 'Manage Destinations',
-          description: 'Add and manage tour destinations',
+          title: 'Destinations',
+          description: 'Manage locations',
           icon: Map,
           route: '/admin/manage-destinations',
-          color: '#8b5cf6', // Violet
+          color: Theme.neon.purple,
         },
         {
-          title: 'Saved Itinerary',
-          description: 'Create and manage tour packages',
+          title: 'Itineraries',
+          description: 'Tour packages',
           icon: BookOpen,
           route: '/admin/saved-itinerary',
-          color: '#a78bfa', // Light Purple
+          color: '#a78bfa',
         },
       ],
     },
     {
-      title: 'Analytics & Feedback',
+      title: 'Analytics & Data',
       items: [
         {
-          title: 'Analysis',
-          description: 'View team performance metrics',
+          title: 'Analytics',
+          description: 'Performance metrics',
           icon: BarChart3,
           route: '/admin/analysis',
-          color: '#ec4899', // Pink
+          color: Theme.neon.pink,
         },
         {
-          title: 'Customer Feedback',
-          description: 'View guest reviews and ratings',
+          title: 'Feedback',
+          description: 'Guest ratings',
           icon: MessageSquare,
           route: '/admin/feedback',
-          color: '#f43f5e', // Rose
+          color: Theme.neon.rose,
         },
         {
-          title: 'Export Data',
-          description: 'Download reports and sheets',
+          title: 'Exports',
+          description: 'Download sheets',
           icon: Download,
           route: '/admin/export',
-          color: '#64748b', // Slate
+          color: Theme.neon.slate,
         },
       ],
     },
@@ -157,55 +180,97 @@ export default function AdminDashboard() {
   return (
     <View style={styles.container}>
       <NotificationBar userId={user?.id || ''} />
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Admin Panel</Text>
-          <Text style={styles.headerSubtitle}>Welcome, {user?.full_name?.split(' ')[0]}</Text>
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push('/sales/notifications')} style={styles.iconButton}>
-            <Bell size={24} color={Colors.text.primary} />
-            {unreadNotifications > 0 && (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>
-                  {unreadNotifications > 9 ? '9+' : unreadNotifications}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/admin/chat')} style={styles.iconButton}>
-            <MessageCircle size={24} color={Colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleLogout} style={styles.iconButton}>
-            <LogOut size={24} color={Colors.status.error} />
-          </TouchableOpacity>
-        </View>
+
+      {/* Background Gradient */}
+      <LinearGradient
+        colors={['rgba(0, 240, 255, 0.1)', 'transparent']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0.5 }}
+      />
+
+      {/* Header HUD */}
+      <View style={styles.headerContainer}>
+        <LinearGradient
+          colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.01)']}
+          style={styles.headerGlass}
+        >
+          <View style={styles.headerContent}>
+            <View>
+              <Text style={styles.headerSubtitle}>SYSTEM SECURE</Text>
+              <Text style={styles.headerTitle}>Welcome, {user?.full_name?.split(' ')[0]}</Text>
+            </View>
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={() => router.push('/sales/notifications')} style={styles.iconButton}>
+                <Bell size={22} color={Theme.neon.cyan} />
+                {unreadNotifications > 0 && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>
+                      {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push('/admin/chat')} style={styles.iconButton}>
+                <MessageCircle size={22} color={Theme.neon.purple} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleLogout} style={styles.iconButton}>
+                <LogOut size={22} color={Theme.neon.red} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </LinearGradient>
       </View>
 
       <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Theme.neon.cyan}
+            colors={[Theme.neon.cyan]}
+            progressBackgroundColor={Theme.surface}
+          />
+        }
       >
         {sections.map((section, sIndex) => (
           <View key={sIndex} style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionHeaderLine} />
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+            </View>
+
             <View style={styles.grid}>
               {section.items.map((item, iIndex) => (
                 <TouchableOpacity
                   key={iIndex}
-                  style={styles.menuCard}
+                  style={styles.cardWrapper}
                   onPress={() => router.push(item.route as any)}
-                  activeOpacity={0.7}
+                  activeOpacity={0.8}
                 >
-                  <View style={[styles.iconContainer, { backgroundColor: item.color + '15' }]}>
-                    <item.icon size={24} color={item.color} />
-                  </View>
-                  <View style={styles.menuTextContainer}>
-                    <Text style={styles.menuTitle}>{item.title}</Text>
-                    <Text style={styles.menuDescription}>{item.description}</Text>
-                  </View>
-                  <ChevronRight size={16} color={Colors.text.tertiary} />
+                  <LinearGradient
+                    colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.02)']}
+                    style={[styles.menuCard, { borderColor: `${item.color}30` }]}
+                  >
+                    <View style={[styles.iconContainer, {
+                      backgroundColor: `${item.color}15`,
+                      shadowColor: item.color,
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowOpacity: 0.5,
+                      shadowRadius: 10,
+                      elevation: 5
+                    }]}>
+                      <item.icon size={26} color={item.color} />
+                    </View>
+                    <View style={styles.menuTextContainer}>
+                      <Text style={styles.menuTitle}>{item.title}</Text>
+                      <Text style={styles.menuDescription} numberOfLines={1}>{item.description}</Text>
+                    </View>
+                    {/* Glowing Accent Line at the bottom of card */}
+                    <View style={[styles.cardAccentLine, { backgroundColor: item.color }]} />
+                  </LinearGradient>
                 </TouchableOpacity>
               ))}
             </View>
@@ -213,119 +278,166 @@ export default function AdminDashboard() {
         ))}
         <View style={styles.spacer} />
       </ScrollView>
-    </View >
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Theme.bg,
   },
-  header: {
-    backgroundColor: Colors.surface,
-    paddingHorizontal: Layout.spacing.lg,
-    paddingTop: 60,
-    paddingBottom: Layout.spacing.lg,
+  headerContainer: {
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    zIndex: 10,
+  },
+  headerGlass: {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: Theme.border,
+    padding: 16,
+    overflow: 'hidden',
+    shadowColor: Theme.neon.cyan,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: Colors.text.primary,
-    letterSpacing: -0.5,
   },
   headerSubtitle: {
-    fontSize: 15,
-    color: Colors.text.secondary,
-    marginTop: 2,
-    fontWeight: '500',
+    fontSize: 10,
+    color: Theme.neon.cyan,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginBottom: 4,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Theme.textPrimary,
+    letterSpacing: 0.5,
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
     alignItems: 'center',
   },
   iconButton: {
-    padding: 8,
-    borderRadius: Layout.radius.full,
-    backgroundColor: Colors.background,
+    padding: 10,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderWidth: 1,
+    borderColor: Theme.border,
   },
   notificationBadge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor: Colors.status.error,
-    borderRadius: 10,
-    minWidth: 18,
-    height: 18,
+    top: -4,
+    right: -4,
+    backgroundColor: Theme.neon.red,
+    borderRadius: 12,
+    minWidth: 20,
+    height: 20,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: Colors.surface,
+    borderColor: '#000',
+    shadowColor: Theme.neon.red,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
   },
   notificationBadgeText: {
-    color: Colors.text.inverse,
+    color: '#fff',
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: '900',
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: Layout.spacing.lg,
+    padding: 20,
   },
   sectionContainer: {
-    marginBottom: Layout.spacing.xl,
+    marginBottom: 32,
   },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: Layout.spacing.md,
-    marginLeft: 4,
-  },
-  grid: {
-    gap: Layout.spacing.md,
-  },
-  menuCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Layout.radius.lg,
-    padding: Layout.spacing.md,
+  sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    ...Layout.shadows.md,
+    marginBottom: 16,
+  },
+  sectionHeaderLine: {
+    width: 24,
+    height: 2,
+    backgroundColor: Theme.neon.cyan,
+    marginRight: 10,
+    shadowColor: Theme.neon.cyan,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: Theme.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  cardWrapper: {
+    width: (width - 40 - 16) / 2, // 2 columns, 40 total padding, 16 gap
+  },
+  menuCard: {
+    borderRadius: 20,
+    padding: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    overflow: 'hidden',
+    height: 140, // Fixed height for consistent grid
+    justifyContent: 'space-between',
   },
   iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: Layout.radius.md,
+    width: 52,
+    height: 52,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: Layout.spacing.md,
+    marginBottom: 12,
   },
   menuTextContainer: {
     flex: 1,
+    justifyContent: 'flex-end',
   },
   menuTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    marginBottom: 2,
+    fontSize: 15,
+    fontWeight: '700',
+    color: Theme.textPrimary,
+    marginBottom: 4,
   },
   menuDescription: {
-    fontSize: 13,
-    color: Colors.text.tertiary,
+    fontSize: 12,
+    color: Theme.textSecondary,
+  },
+  cardAccentLine: {
+    position: 'absolute',
+    bottom: 0,
+    left: 16,
+    right: 16,
+    height: 3,
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    opacity: 0.8,
   },
   spacer: {
-    height: 40,
+    height: 80,
   }
 });
